@@ -8,6 +8,8 @@ Intersystems python model
 
 `pip install intersystems-irispython`
 
+`pip install sqlalchemy-iris`
+
 # SQL Explorer 
 
 http://localhost:32783/csp/sys/exp/%25CSP.UI.Portal.SQL.Home.zen?$NAMESPACE=FHIRSERVER
