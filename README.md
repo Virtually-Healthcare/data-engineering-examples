@@ -2,7 +2,7 @@ Examples work with this FHIR Server [Intersystems Open Exchange - iris-fhir-temp
 
 Management Portal 
 
-http://localhost:32783/csp/sys/UtilHome.csp
+[IRIS Managment Portal](http://localhost:32783/csp/sys/UtilHome.csp)
 
 Intersystems python model 
 
@@ -14,7 +14,7 @@ Intersystems python model
 
 # SQL Explorer 
 
-http://localhost:32783/csp/sys/exp/%25CSP.UI.Portal.SQL.Home.zen?$NAMESPACE=FHIRSERVER
+[IRIS SQL Explorer](http://localhost:32783/csp/sys/exp/%25CSP.UI.Portal.SQL.Home.zen?$NAMESPACE=FHIRSERVER)
 
 ```sql
 SELECT 
