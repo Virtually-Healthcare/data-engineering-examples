@@ -12,6 +12,31 @@ Intersystems python model
 
 `pip install fhir.resources`
 
+# Patient Data Fix
+
+[iris-fhir-template issue 32](https://github.com/intersystems-community/iris-fhir-template/issues/32)
+
+Follow instructions up to this command
+
+`FHIRSERVER>d ##class(fhirtemplate.Setup).LoadPatientData("/irisdev/app/output/fhir","FHIRSERVER","/fhir/r4")`
+
+Instead 
+
+Using [IRIS Package Manager](http://localhost:32783/csp/sys/mgr/%25CSP.UI.Portal.Mappings.zen?MapType=Prj&PID=FHIRSERVER) map package `fhirtemplate` from USER namespace.
+
+Copy contents of
+
+> output\fhir
+
+These need to be copied to
+
+> data\fhir
+
+Which is a mapped folder in the docker-compose. Then the load command is (presuming the class has been mapped to FHIRSERVER namespace)
+
+> FHIRSERVER>d ##class(fhirtemplate.Setup).LoadPatientData("/data/fhir","FHIRSERVER","/fhir/r4")
+
+
 # SQL Explorer 
 
 [IRIS SQL Explorer](http://localhost:32783/csp/sys/exp/%25CSP.UI.Portal.SQL.Home.zen?$NAMESPACE=FHIRSERVER)
