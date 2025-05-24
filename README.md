@@ -34,7 +34,7 @@ These need to be copied to
 
 Which is a mapped folder in the docker-compose. Then the load command is (presuming the class has been mapped to FHIRSERVER namespace)
 
-> FHIRSERVER>d ##class(fhirtemplate.Setup).LoadPatientData("/data/fhir","FHIRSERVER","/fhir/r4")
+> d ##class(fhirtemplate.Setup).LoadPatientData("/data/fhir","FHIRSERVER","/fhir/r4")
 
 
 # SQL Explorer 
