@@ -50,5 +50,5 @@ where patient = 'Patient/6' and code [ '38483-4';
 
 # Useful resources
 
-Intersystems Engineer
+Intersystems (France) Engineer
 https://github.com/SylvainGuilbaud?tab=repositories
