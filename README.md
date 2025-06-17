@@ -52,3 +52,7 @@ where patient = 'Patient/6' and code [ '38483-4';
 
 Intersystems (France) Engineer
 https://github.com/SylvainGuilbaud?tab=repositories
+
+# Apache Airflow Install
+
+https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html
