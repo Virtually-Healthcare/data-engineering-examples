@@ -1,3 +1,27 @@
+# Install
+
+## Apache Airflow Install
+
+https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html
+
+Steps
+
+### Initialise airflow.cfg (Optional)
+
+> docker compose run airflow-cli airflow config list
+
+### Initialise Database
+
+> docker compose up airflow-init
+
+### Running Airflow
+
+> docker compose up
+
+
+
+## FHIR Repository (Intersystems)
+
 Examples work with this FHIR Server [Intersystems Open Exchange - iris-fhir-template](https://openexchange.intersystems.com/package/iris-fhir-template)
 
 Management Portal 
@@ -12,7 +36,7 @@ Intersystems python model
 
 `pip install fhir.resources`
 
-# Patient Data Fix
+### Patient Data Fix
 
 [iris-fhir-template issue 32](https://github.com/intersystems-community/iris-fhir-template/issues/32)
 
@@ -37,7 +61,7 @@ Which is a mapped folder in the docker-compose. Then the load command is (presum
 > d ##class(fhirtemplate.Setup).LoadPatientData("/data/fhir","FHIRSERVER","/fhir/r4")
 
 
-# SQL Explorer 
+### SQL Explorer 
 
 [IRIS SQL Explorer](http://localhost:32783/csp/sys/exp/%25CSP.UI.Portal.SQL.Home.zen?$NAMESPACE=FHIRSERVER)
 
@@ -48,11 +72,9 @@ FROM HSFHIR_X0001_S.Observation
 where patient = 'Patient/6' and code [ '38483-4';
 ````
 
-# Useful resources
+### Useful resources
 
 Intersystems (France) Engineer
 https://github.com/SylvainGuilbaud?tab=repositories
 
-# Apache Airflow Install
 
-https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html
