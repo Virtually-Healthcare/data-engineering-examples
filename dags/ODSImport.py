@@ -17,7 +17,6 @@ from io import BytesIO
 import pandas as pd
 import intersystems_iris.dbapi._DBAPI as dbapi
 
-
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
@@ -46,14 +45,14 @@ default_args = {
     schedule=None,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     catchup=False,
-    tags=["example"],
+    tags=["ODS","import","FHIR"],
 )
 
 def load_practitioner():
 
 
-    @task(task_id="Load_ODS_Practioners")
-    def load_ods_practitioners(ds=None, **kwargs):
+    @task(task_id="Extract_ODS_Practitioners")
+    def extract_ods_practitioners(ds=None, **kwargs):
         maxentries = 20000
 
         headers = {'User-Agent': 'Mozilla/5.0 (X11; Windows; Windows x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.5060.114 Safari/537.36'}
@@ -80,8 +79,8 @@ def load_practitioner():
 
         return epraccur
 
-    @task(task_id="Load_FHIR_Practioners")
-    def load_FHIR_practitioners(ds=None, **kwargs):
+    @task(task_id="Extract_FHIR_Practitioners")
+    def extract_FHIR_practitioners(ds=None, **kwargs):
         host = "localhost"
         # this is the superserver port
         port = 32782
@@ -113,13 +112,14 @@ def load_practitioner():
         pd.set_option('future.no_silent_downcasting', True)
         return df
 
-    @task(task_id="Merge_Practioners")
+    @task(task_id="Merge_Practitioners")
     def merge_practitioners(ds=None, **kwargs):
         return
 
-    load_ods_practitioners = load_ods_practitioners()
-    load_FHIR_practitioners = load_FHIR_practitioners()
+    extract_ods_practitioners = extract_ods_practitioners()
+    extract_FHIR_practitioners = extract_FHIR_practitioners()
+    merge_practitioners = merge_practitioners()
 
-    [load_ods_practitioners,load_FHIR_practitioners] >> merge_practitioners
+    [extract_FHIR_practitioners,extract_ods_practitioners] >> merge_practitioners
 
 # [END tutorial]
