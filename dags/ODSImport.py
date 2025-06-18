@@ -150,7 +150,7 @@ with DAG(
         return organisations
 
 
-    @task(task_id="Load_Organisations_GPPractice")
+    @task(task_id="Load_Organisations_GPPractice",retries=0)
     def load_organisations(organisations):
         def convertOrganisationFHIR(org):
             organisationJSON = {
@@ -373,7 +373,7 @@ with DAG(
         practitioners['_id'] = practitioners['_id'].fillna(-1).astype(int)
         return practitioners
 
-    @task(task_id="Load_Practitioners_GPPractice")
+    @task(task_id="Load_Practitioners_GPPractice",retries=0)
     def load_practitioners(practitioners):
         def convertPractitionerFHIR(GMP):
             practitionerJSON = {
@@ -507,7 +507,7 @@ with DAG(
         practitionerroles['_id'] = practitionerroles['_id'].fillna(-1).astype(int)
         return practitionerroles
 
-    @task(task_id="Load_PractitionerRoles_GPPractice")
+    @task(task_id="Load_PractitionerRoles_GPPractice", retries=0)
     def load_practitionerroles(mergedroles):
 
         def convertPractitionerRoleFHIR(GMP):
