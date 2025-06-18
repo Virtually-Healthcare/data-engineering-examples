@@ -21,7 +21,7 @@ from fhir.resources.R4B.practitioner import Practitioner
 from fhir.resources.R4B.practitionerrole import PractitionerRole
 import json
 
-maxentries = 30000
+maxentries = 5000
 host = "192.168.1.59"
 # this is the superserver port
 port = 32782
@@ -406,7 +406,7 @@ with DAG(
                     }
                 ]
             }
-            if practitioners.loc[GMP,'Practitioner_Initials'] != '' and not pd.isnull(practitioners.loc[GMP,'Practitioner_Initials']) :
+            if practitioners.loc[GMP,'Practitioner_Initials'] != '' :
                 given = practitioners.loc[GMP,'Practitioner_Initials'].split(' ')
                 practitionerJSON['name'][0]['given'] = []
                 for id in range(0, len(given)):
@@ -419,8 +419,6 @@ with DAG(
 
 
             return practitionerJSON
-
-
 
 
         new = practitioners[['_id']].head(maxentries).copy()
@@ -445,7 +443,7 @@ with DAG(
         return practitioners
 
     @task(task_id="Transform_To_PractitionerRole")
-    def transform_pratitionerrole(updatedpractitioners, updatedorganisations):
+    def transform_pratitionerroles(updatedpractitioners, updatedorganisations):
         updatedpractitioners['GMP'] = updatedpractitioners.index.astype(str)
         practitionerroles = pd.merge(updatedpractitioners[["GMP","_id","Practitioner_Name","ODS","Started","Ended"]], updatedorganisations[["_id","Organisation_Name"]], how="inner", on=["ODS"]).set_index('GMP')
 
@@ -657,7 +655,7 @@ with DAG(
     updatedpractitioners = load_practitioners(practitioners)
 
     dfroles = extract_FHIR_practitionerroless()
-    practitionerroles = transform_pratitionerrole(updatedpractitioners, updatedorganisations)
+    practitionerroles = transform_pratitionerroles(updatedpractitioners, updatedorganisations)
     mergedroles = merge_practitionerroles(practitionerroles, dfroles)
     loadedroles = load_practitionerroles(mergedroles)
 
