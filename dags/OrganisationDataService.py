@@ -32,7 +32,7 @@ default_args = {
 }
 
 with DAG(
-        'tutorial',
+        'Organisation Data Service',
         default_args=default_args,
         description='A simple tutorial DAG',
         start_date=datetime(2022, 1, 1),
