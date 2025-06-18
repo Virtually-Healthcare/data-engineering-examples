@@ -7,8 +7,7 @@ import pendulum
 from airflow import DAG
 
 # Operators; we need this to operate!
-from airflow.providers.standard.operators.bash import BashOperator
-#from airflow.providers.standard.operators.python import PythonOperator
+
 from airflow.sdk import task, dag
 
 import requests
@@ -41,15 +40,13 @@ default_args = {
 }
 
 
-@dag(
-    schedule=None,
-    start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
-    catchup=False,
-    tags=["ODS","import","FHIR"],
-)
-
-def load_practitioner():
-
+with DAG(
+        'Organisation_Data_Service',
+        default_args=default_args,
+        description='A simple tutorial DAG',
+        start_date=datetime(2022, 1, 1),
+        tags=['FHIR','ODS'],
+) as dag:
 
     @task(task_id="Extract_ODS_Practitioners")
     def extract_ods_practitioners(ds=None, **kwargs):
@@ -81,7 +78,7 @@ def load_practitioner():
 
     @task(task_id="Extract_FHIR_Practitioners")
     def extract_FHIR_practitioners(ds=None, **kwargs):
-        host = "localhost"
+        host = "192.168.64.1"
         # this is the superserver port
         port = 32782
         namespace = "FHIRSERVER"
