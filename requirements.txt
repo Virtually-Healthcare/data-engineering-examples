@@ -1,4 +1,3 @@
-pandas
 intersystems-irispython
 sqlalchemy-iris
 fhir.resources
