@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pprint import pprint
-from textwrap import dedent
 from datetime import datetime, timedelta
 
 import pendulum
@@ -17,7 +15,7 @@ import requests
 from zipfile import ZipFile
 from io import BytesIO
 import pandas as pd
-import iris
+import intersystems_iris.dbapi._DBAPI as dbapi
 
 
 default_args = {
@@ -91,7 +89,7 @@ def load_practitioner():
         user = "_SYSTEM"
         password = "SYS"
 
-        conn = iris.connect(
+        conn = dbapi.connect(
             hostname=host,
             port=port,
             namespace=namespace,
