@@ -21,8 +21,10 @@ from fhir.resources.R4B.practitioner import Practitioner
 from fhir.resources.R4B.practitionerrole import PractitionerRole
 import json
 
-maxentries = 5000
-host = "192.168.1.59"
+maxentries = 35000
+fullLoad = True
+#host = "192.168.1.59"
+host="192.168.1.94"
 # this is the superserver port
 port = 32782
 namespace = "FHIRSERVER"
@@ -96,8 +98,8 @@ with DAG(
 
 
 
-    @task(task_id="Extract_FHIR_Organisations_GPPractice")
-    def extract_FHIR_organisations(ds=None, **kwargs):
+    @task(task_id="Extract_SQL_Organisations_GPPractice")
+    def extract_SQL_organisations(ds=None, **kwargs):
 
 
         conn = dbapi.connect(
@@ -145,13 +147,13 @@ with DAG(
         organisations = pd.merge(epraccur, df, how="left", on=["ODS"])
         organisations = organisations.set_index(['ODS'])
 
-        organisations['_id'] = organisations['_id'].fillna(-1).astype(int)
+        organisations['_id'] = organisations['_id'].fillna('').astype(str)
 
         return organisations
 
 
-    @task(task_id="Load_Organisations_GPPractice",retries=0)
-    def load_organisations(organisations):
+    @task(task_id="Load_FHIR_Organisations_GPPractice",retries=0)
+    def load_fhir_organisations(organisations):
         def convertOrganisationFHIR(org):
             organisationJSON = {
                 "resourceType": "Organization",
@@ -217,20 +219,24 @@ with DAG(
                     organisationJSON['address'][0]['district'] = organisations.loc[org,'AddressLine_4']
             if organisations.loc[org,'Closed'] != '' and not pd.isnull(organisations.loc[org,'Closed']) :
                 organisationJSON['active'] = False
-            if organisations.loc[org,'_id'] != -1:
+            if organisations.loc[org,'_id'] != '':
                 organisationJSON['id'] = str(organisations.loc[org,'_id'])
             #print(json.dumps(organisationJSON, indent=2, ensure_ascii=False))
             # validate organisation against schema
             Organization(**organisationJSON)
             return organisationJSON
 
-        new = organisations[['_id']].head(maxentries).copy()
+        if fullLoad:
+            new = organisations[['_id']].copy()
+        else:
+            new = organisations[['_id']].head(maxentries).copy()
+
         for org in new.index:
 
             organisationJSON = convertOrganisationFHIR(org)
             #print(json.dumps(organisationJSON, indent=2, ensure_ascii=False))
 
-            if (organisations.loc[org,'_id'] == -1):
+            if (organisations.loc[org,'_id'] == ''):
 
                 # Create
 
@@ -330,8 +336,8 @@ with DAG(
         egpcur = egpcur.set_index(['GMP'])
         return egpcur
 
-    @task(task_id="Extract_FHIR_Practitioner_GPPractice")
-    def extract_FHIR_practitioners(ds=None, **kwargs):
+    @task(task_id="Extract_SQL_Practitioner_GPPractice")
+    def extract_SQL_practitioners(ds=None, **kwargs):
 
         conn = dbapi.connect(
             hostname=host,
@@ -370,11 +376,11 @@ with DAG(
 
         practitioners = pd.merge(egpcur, dfgp, how="left", on=["GMP"])
         practitioners = practitioners.set_index(['GMP'])
-        practitioners['_id'] = practitioners['_id'].fillna(-1).astype(int)
+        practitioners['_id'] = practitioners['_id'].fillna('').astype(str)
         return practitioners
 
-    @task(task_id="Load_Practitioners_GPPractice",retries=0)
-    def load_practitioners(practitioners):
+    @task(task_id="Load_FHIR_Practitioners_GPPractice",retries=0)
+    def load_fhir_practitioners(practitioners):
         def convertPractitionerFHIR(GMP):
             practitionerJSON = {
                 "resourceType": "Practitioner",
@@ -420,12 +426,15 @@ with DAG(
 
             return practitionerJSON
 
+        if fullLoad:
+            new = practitioners[['_id']].copy()
+        else:
+            new = practitioners[['_id']].head(maxentries).copy()
 
-        new = practitioners[['_id']].head(maxentries).copy()
         for GMP in new.index:
 
             practitionerJSON = convertPractitionerFHIR(GMP)
-            if (practitioners.loc[GMP,'_id'] == -1):
+            if (practitioners.loc[GMP,'_id'] == ''):
 
                 # Create
 
@@ -449,14 +458,14 @@ with DAG(
 
         # Remove entries without ID's in the database
 
-        practitionerroles = practitionerroles.drop(practitionerroles[practitionerroles._id_x == -1].index)
-        practitionerroles = practitionerroles.drop(practitionerroles[practitionerroles._id_y == -1].index)
+        practitionerroles = practitionerroles.drop(practitionerroles[practitionerroles._id_x == ''].index)
+        practitionerroles = practitionerroles.drop(practitionerroles[practitionerroles._id_y == ''].index)
 
 
         return practitionerroles
 
-    @task(task_id="Extract_FHIR_PractitionerRole_GPPractice")
-    def extract_FHIR_practitionerroless(ds=None, **kwargs):
+    @task(task_id="Extract_SQL_PractitionerRole_GPPractice")
+    def extract_SQL_practitionerroless(ds=None, **kwargs):
 
         conn = dbapi.connect(
             hostname=host,
@@ -504,11 +513,11 @@ with DAG(
         practitionerroles = pd.merge(practitionerroles, dfroles, how="left", on=["ODS","GMP"]).set_index('GMP')
         ## Make a copy of the index as a column
         practitionerroles['GMP'] = practitionerroles.index.astype(str)
-        practitionerroles['_id'] = practitionerroles['_id'].fillna(-1).astype(int)
+        practitionerroles['_id'] = practitionerroles['_id'].fillna('').astype(str)
         return practitionerroles
 
-    @task(task_id="Load_PractitionerRoles_GPPractice", retries=0)
-    def load_practitionerroles(mergedroles):
+    @task(task_id="Load_FHIR_PractitionerRoles_GPPractice", retries=0)
+    def load_fhir_practitionerroles(mergedroles):
 
         def convertPractitionerRoleFHIR(GMP):
             practitionerRoleJSON = {
@@ -569,12 +578,15 @@ with DAG(
             practitionerRole = PractitionerRole(**practitionerRoleJSON)
             return practitionerRoleJSON
 
+        if fullLoad:
+            new = mergedroles[['GMP']].copy()
+        else:
+            new = mergedroles[['GMP']].head(maxentries).copy()
 
-        new = mergedroles[['GMP']].head(maxentries).copy()
         for GMP in new.index:
 
             practitionerRoleJSON = convertPractitionerRoleFHIR(GMP)
-            if (mergedroles.loc[GMP,'_id'] == -1):
+            if (mergedroles.loc[GMP,'_id'] == ''):
 
                 # Create
 
@@ -645,19 +657,19 @@ with DAG(
 
 
     epraccur = extract_ods_organisations()
-    df = extract_FHIR_organisations()
+    df = extract_SQL_organisations()
     organisations = merge_organisations(epraccur, df)
-    updatedorganisations = load_organisations(organisations)
+    updatedorganisations = load_fhir_organisations(organisations)
 
     egpcur = extract_ods_practitioners()
-    dfgp = extract_FHIR_practitioners()
+    dfgp = extract_SQL_practitioners()
     practitioners = merge_practitioners(egpcur, dfgp)
-    updatedpractitioners = load_practitioners(practitioners)
+    updatedpractitioners = load_fhir_practitioners(practitioners)
 
-    dfroles = extract_FHIR_practitionerroless()
+    dfroles = extract_SQL_practitionerroless()
     practitionerroles = transform_pratitionerroles(updatedpractitioners, updatedorganisations)
     mergedroles = merge_practitionerroles(practitionerroles, dfroles)
-    loadedroles = load_practitionerroles(mergedroles)
+    loadedroles = load_fhir_practitionerroles(mergedroles)
 
     [epraccur,df] >> organisations >> updatedorganisations
     [egpcur,dfgp] >> practitioners >> updatedpractitioners
