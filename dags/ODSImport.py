@@ -23,8 +23,8 @@ import json
 
 maxentries = 35000
 fullLoad = True
-#host = "192.168.1.59"
-host="192.168.1.94"
+host = "192.168.1.59"
+#host="192.168.1.94"
 # this is the superserver port
 port = 32782
 namespace = "FHIRSERVER"
@@ -374,6 +374,7 @@ with DAG(
                     dfgp.loc[pracId,'GMP'] = id.split('|')[1]
 
 
+        # May need to consider reversing this merge - we probably will end up with duplicates in the FHIR Server
         practitioners = pd.merge(egpcur, dfgp, how="left", on=["GMP"])
         practitioners = practitioners.set_index(['GMP'])
         practitioners['_id'] = practitioners['_id'].fillna('').astype(str)
