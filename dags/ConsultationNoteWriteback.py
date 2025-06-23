@@ -83,7 +83,7 @@ with DAG(
     @task(task_id="dag_start")
     def dag_start(**context):
         print(context["params"]["_task"])
-        task = json.loads(context["params"]["_task"])
+        task = context["params"]["_task"]
         print("Started Task id = "+task['id'])
         return task
 
@@ -94,7 +94,7 @@ with DAG(
     @task(task_id="get_collection")
     def get_collection(fhirtask):
         headersCDR = { "Accept": "application/fhir+json"}
-        encounter = task['focus']['identifier']
+        encounter = fhirtask['focus']['identifier']
         parameters = {'identifier' : encounter['system'] + '|' + encounter['value']}
 
         responseCDR = requests.get(cdrFHIRUrl + '/Encounter/$extract-collection',parameters,headers=headersCDR)
@@ -103,13 +103,13 @@ with DAG(
             print(responseCDR.text)
         return {
             "response": responseCDR.text,
-            "task": task
+            "task": fhirtask
         }
 
     _fhirtask = dag_start()
-    #_dag_end = dag_end()
+    _dag_end = dag_end()
     _collection = get_collection(_fhirtask)
 
-    _fhirtask >> _collection
+    _fhirtask >> _collection >> _dag_end
 
 
