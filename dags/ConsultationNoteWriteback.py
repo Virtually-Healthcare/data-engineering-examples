@@ -8,6 +8,7 @@ import json
 
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
+from more_itertools.more import run_length
 
 default_args = {
     'owner': 'airflow',
@@ -102,8 +103,12 @@ with DAG(
         print("Started Task id = "+task['id'])
         return task
 
-    @task(task_id="Task_completed")
+    @task(task_id="Task_completed", trigger_rule="none_failed")
     def Task_completed(_task):
+        _task['status'] = 'completed'
+        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
+        response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
+        print(response.text)
         return "end"
 
     @task(task_id="Task_in-progress")
@@ -122,6 +127,16 @@ with DAG(
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
         print(response.text)
         return "error"
+
+
+    def Task_cancelled(context):
+        print("Task cancelled")
+        print(context)
+        #_task['status'] = 'cancelled'
+        #headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
+        #response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
+        #print(response.text)
+        return "Task Cancelled"
 
     @task(task_id="get_consultation")
     def get_consultation(_task):
@@ -142,7 +157,7 @@ with DAG(
     def get_destination_endpoint(record):
         return "EMIS"
 
-    @task.branch(task_id="check_consultation_not_already_present_in_EMIS", on_failure_callback = "Task_cancelled")
+    @task.branch(task_id="check_consultation_not_already_present_in_EMIS", on_failure_callback = [Task_cancelled])
     def check_consultation_not_already_present_in_EMIS(record):
         headersEMIS = {"Accept": "application/fhir+json",
                        "ODS_CODE": "F83004"}
@@ -249,7 +264,7 @@ with DAG(
             return "FAIL"
         return "PASS"
 
-    @task(task_id="convert_to_EMISOpen",retries=3, on_failure_callback = "Task_cancelled")
+    @task(task_id="convert_to_EMISOpen",retries=3, on_failure_callback = [Task_cancelled])
     def convert_to_EMISOpen(record):
         headersEMIS = {"Content-Type": "application/fhir+json",
                        "ODS_CODE": "F83004"}
@@ -262,7 +277,7 @@ with DAG(
         }
         return EMISOpenRecords
 
-    @task(task_id="send_to_EMIS", retries = 3, on_failure_callback = "Task_cancelled")
+    @task(task_id="send_to_EMIS", retries = 3, on_failure_callback = [Task_cancelled])
     def send_to_EMIS(EMISOpen):
         headersEMIS = {"Content-Type": "application/fhir+json",
                        "ODS_CODE": "F83004"}
@@ -302,7 +317,7 @@ with DAG(
     def NHS_Trust_FUTURE():
         return "TODO: NHS Trust - Future"
 
-    @task(task_id="convert_to_HL7_v2_ADT_A04_FUTURE_TODO",retries=3, on_failure_callback = "Task_cancelled")
+    @task(task_id="convert_to_HL7_v2_ADT_A04_FUTURE_TODO",retries=3, on_failure_callback = [Task_cancelled])
     def convert_to_HL7_v2_ADT_A04(_collection):
         return "TODO: Convert to HL7 ADT A04"
 
@@ -310,14 +325,7 @@ with DAG(
     def send_to_Trust_Integration_Engine(_message):
         return "TODO: Send to Trust Integration Engine"
 
-    @task(task_id="Task_cancelled")
-    def Task_cancelled(_task, context):
-        print("Task cancelled")
-        _task['status'] = 'cancelled'
-        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
-        response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
-        print(response.text)
-        return "Task Cancelled"
+
 
     _task = Task_accepted()
     _sucess= Task_completed(_task)
