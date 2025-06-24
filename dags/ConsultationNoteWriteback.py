@@ -66,7 +66,7 @@ with DAG(
                 for entry in tasksJSON['entry']:
                     if 'resource' in entry:
                         tasks.append(entry['resource'])
-        print(len(tasks))
+        print("Number of Tasks = {}".format(len(tasks)))
         return tasks
 
     _tasks = get_tasks()
@@ -147,6 +147,7 @@ with DAG(
         headersEMIS = {"Accept": "application/fhir+json",
                        "ODS_CODE": "F83004"}
         resource = json.loads(record['response'])
+        task = record['task']
         id = 0
         patientId = ''
         encounterId = ''
@@ -174,7 +175,7 @@ with DAG(
             resource = json.loads(responseComposition.text)
             for entry in resource.get('entry', []):
                 if 'resourceType' in entry['resource'] and entry['resource']['resourceType'] == 'Composition':
-                    print('Have composition')
+                    print('Task '+task['id']+ ' refers to a consultation already on EMIS')
                     if 'encounter' in entry['resource'] and 'identifier' in entry['resource']['encounter'] and entry['resource']['encounter']['identifier']['value'] == encounterId :
                         return "DUPLICATE"
         return "NOT_DUPLICATE"
@@ -309,8 +310,14 @@ with DAG(
     def send_to_Trust_Integration_Engine(_message):
         return "TODO: Send to Trust Integration Engine"
 
+    @task(task_id="Task_cancelled")
     def Task_cancelled(_task, context):
         print("Task cancelled")
+        _task['status'] = 'cancelled'
+        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
+        response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
+        print(response.text)
+        return "Task Cancelled"
 
     _task = Task_accepted()
     _sucess= Task_completed(_task)
@@ -330,6 +337,7 @@ with DAG(
     _NHSTrust = NHS_Trust_FUTURE()
     _message = convert_to_HL7_v2_ADT_A04(_collection)
     _sendTrust = send_to_Trust_Integration_Engine(_message)
+    #_cancelled = Task_cancelled(_task)
 
     EMIS_op = EmptyOperator(task_id="EMIS", dag=dag2)
     TPP_op = EmptyOperator(task_id="TPP", dag=dag2)
@@ -338,6 +346,7 @@ with DAG(
     FAIL_op = EmptyOperator(task_id="FAIL", dag=dag2)
     DUPLICATE_op = EmptyOperator(task_id="DUPLICATE", dag=dag2)
     NOT_DUPLICATE_op = EmptyOperator(task_id="NOT_DUPLICATE", dag=dag2)
+
 
     _task >> _inprogress >> _collection >> _valid >> [PASS_op, FAIL_op]
 
