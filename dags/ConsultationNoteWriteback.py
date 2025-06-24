@@ -87,19 +87,19 @@ with (DAG(
 
     options = ["EMIS", "TPP", "GPConnect_SendDocument"]
 
-    @task(task_id="start")
-    def start(**context):
+    @task(task_id="Task_accepted")
+    def Task_accepted(**context):
         print(context["params"]["_task"])
         task = context["params"]["_task"]
         print("Started Task id = "+task['id'])
         return task
 
-    @task(task_id="sucess")
-    def sucess(_task):
+    @task(task_id="Task_completed")
+    def Task_completed(_task):
         return "end"
 
-    @task(task_id="error")
-    def error(_task):
+    @task(task_id="Task_failed")
+    def Task_failed(_task):
         return "error"
 
     @task(task_id="get_consultation")
@@ -121,7 +121,7 @@ with (DAG(
     def get_destination_endpoint(record):
         return "EMIS"
 
-    @task.branch(task_id="check_consultation_not_already_present_in_EMIS")
+    @task.branch(task_id="check_consultation_not_already_present_in_EMIS", on_failure_callback = "Task_cancelled")
     def check_consultation_not_already_present_in_EMIS(record):
         headersEMIS = {"Accept": "application/fhir+json",
                        "ODS_CODE": "F83004"}
@@ -227,7 +227,7 @@ with (DAG(
             return "FAIL"
         return "PASS"
 
-    @task(task_id="convert_to_EMISOpen",retries=3)
+    @task(task_id="convert_to_EMISOpen",retries=3, on_failure_callback = "Task_cancelled")
     def convert_to_EMISOpen(record):
         headersEMIS = {"Content-Type": "application/fhir+json",
                        "ODS_CODE": "F83004"}
@@ -240,7 +240,7 @@ with (DAG(
         }
         return EMISOpenRecords
 
-    @task(task_id="send_to_EMIS")
+    @task(task_id="send_to_EMIS", retries = 3, on_failure_callback = "Task_cancelled")
     def send_to_EMIS(EMISOpen):
         headersEMIS = {"Content-Type": "application/fhir+json",
                        "ODS_CODE": "F83004"}
@@ -276,21 +276,24 @@ with (DAG(
     def get_PDS_Patient(_task):
         return "TODO: Get PDS Patient"
 
-    @task(task_id="NHS_Trust_FUTURE",retries=3)
+    @task(task_id="NHS_Trust_FUTURE_TODO",retries=3)
     def NHS_Trust_FUTURE():
         return "TODO: NHS Trust - Future"
 
-    @task(task_id="convert_to_HL7_v2_ADT_A04",retries=3)
+    @task(task_id="convert_to_HL7_v2_ADT_A04_FUTURE_TODO",retries=3, on_failure_callback = "Task_cancelled")
     def convert_to_HL7_v2_ADT_A04(_collection):
         return "TODO: Convert to HL7 ADT A04"
 
-    @task(task_id="send_to_Trust_Integration_Engine",retries=3)
+    @task(task_id="send_to_Trust_Integration_Engine_FUTURE_TODO",retries=3)
     def send_to_Trust_Integration_Engine(_message):
         return "TODO: Send to Trust Integration Engine"
 
-    _task = start()
-    _sucess= sucess(_task)
-    _error = error(_task)
+    def Task_cancelled(_task, context):
+        print("Task cancelled")
+
+    _task = Task_accepted()
+    _sucess= Task_completed(_task)
+    _error = Task_failed(_task)
     _collection = get_consultation(_task)
     _duplicate = check_consultation_not_already_present_in_EMIS(_collection)
     _valid = perform_FHIR_Validation(_collection)
