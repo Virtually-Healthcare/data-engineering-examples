@@ -108,10 +108,19 @@ with DAG(
 
     @task(task_id="Task_in-progress")
     def Task_in_progress(_task):
+
+        _task['status'] = 'in-progress'
+        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
+        response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
+        print(response.text)
         return "end"
 
     @task(task_id="Task_failed")
     def Task_failed(_task):
+        _task['status'] = 'failed'
+        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
+        response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
+        print(response.text)
         return "error"
 
     @task(task_id="get_consultation")
