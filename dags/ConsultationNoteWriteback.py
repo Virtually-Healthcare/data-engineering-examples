@@ -32,8 +32,8 @@ default_args = {
     # 'trigger_rule': 'all_success'
 }
 
-#host = "192.168.1.59"
-host="192.168.1.94"
+host = "192.168.1.59"
+##host="192.168.1.94"
 
 cdrFHIRUrl = "http://"+host+":8180/CDR/FHIR/R4"
 emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"
@@ -41,13 +41,15 @@ esbFHIRUrl = "http://"+host+":8181/ESB/R4"
 
 with DAG(
         'Consultation_Note_Trigger_Tasks',
-        schedule=timedelta(minutes=2),
+        schedule=timedelta(minutes=1),
         catchup=False,
         description='Consultation Note Writeback',
         start_date=datetime(2022, 1, 1)
-) as dag1:
+) as Parent_dag:
 
-
+    @task
+    def done():
+        print("Done")
 
     def get_tasks():
         headersCDR = { "Accept": "application/fhir+json"}
@@ -56,6 +58,7 @@ with DAG(
                       'status': 'accepted'}
 
         tasks = []
+        print('get tasks run')
         response = requests.get(cdrFHIRUrl + '/Task',parameters,headers=headersCDR)
         if response.status_code == 200:
             tasksJSON = json.loads(response.text)
@@ -63,28 +66,32 @@ with DAG(
                 for entry in tasksJSON['entry']:
                     if 'resource' in entry:
                         tasks.append(entry['resource'])
+        print(len(tasks))
         return tasks
 
-    tasks = get_tasks()
-    id = 0
-    for _task in tasks:
-        id += 1
-        print("Trigger task id = "+_task['id'])
-        trigger_send_task_dag = TriggerDagRunOperator(
-          #  task_id=f"trigger_consultation_task",
+    _tasks = get_tasks()
+
+    for _task in _tasks:
+
+        id = _task['id']
+        print("Trigger task id = "+ id)
+        _trigger_send_task_dag = TriggerDagRunOperator(
+            #  task_id=f"trigger_consultation_task",
             task_id=f"trigger_consultation_task_{id}",
             trigger_dag_id="Consultation_Note_Task",
             conf={"_task": _task},
-            dag=dag1
+            dag=Parent_dag
         )
+    _done = done()
 
+    #_trigger_send_task_dag >> _done
 
-with (DAG(
+with DAG(
         'Consultation_Note_Task',
         schedule=None,
         description='Consultation Note Writeback',
         start_date=datetime(2022, 1, 1)
-) as dag2):
+) as dag2:
 
     options = ["EMIS", "TPP", "GPConnect_SendDocument"]
 
