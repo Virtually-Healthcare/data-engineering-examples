@@ -138,6 +138,10 @@ with DAG(
         #print(response.text)
         return "Task Cancelled"
 
+    @task(task_id="Done_Primary_Care_Send", trigger_rule="one_success")
+    def Done_Primary_Care_Send():
+        return "One GPSend success"
+
     @task(task_id="get_consultation")
     def get_consultation(_task):
         headersCDR = { "Accept": "application/fhir+json"}
@@ -153,8 +157,8 @@ with DAG(
             "task": _task
         }
 
-    @task.branch(task_id="get_destination_endpoint",retries=0)
-    def get_destination_endpoint(record):
+    @task.branch(task_id="get_Primary_Care_Endpoint",retries=0)
+    def get_Primary_Care_Endpoint(record):
         return "EMIS"
 
     @task.branch(task_id="check_consultation_not_already_present_in_EMIS", on_failure_callback = [Task_cancelled])
@@ -328,15 +332,15 @@ with DAG(
 
 
     _task = Task_accepted()
-    _sucess= Task_completed(_task)
     _inprogress = Task_in_progress(_task)
+    _success= Task_completed(_task)
     _error = Task_failed(_task)
     _collection = get_consultation(_task)
     _duplicate = check_consultation_not_already_present_in_EMIS(_collection)
     _valid = perform_FHIR_Validation(_collection)
     _EMISOpen = convert_to_EMISOpen(_collection)
     _sendResponse = send_to_EMIS(_EMISOpen)
-    _endpoint = get_destination_endpoint(_collection)
+    _endpoint = get_Primary_Care_Endpoint(_collection)
     _pdsPatient = get_PDS_Patient(_task)
     _FHIRDocument = convert_to_FHIR_Document(_collection)
     _pdf = transform_to_PDF(_FHIRDocument)
@@ -345,6 +349,7 @@ with DAG(
     _NHSTrust = NHS_Trust_FUTURE()
     _message = convert_to_HL7_v2_ADT_A04(_collection)
     _sendTrust = send_to_Trust_Integration_Engine(_message)
+    _doneGPSend = Done_Primary_Care_Send()
     #_cancelled = Task_cancelled(_task)
 
     EMIS_op = EmptyOperator(task_id="EMIS", dag=dag2)
@@ -363,12 +368,10 @@ with DAG(
 
     _endpoint >> [TPP_op, GPConnect_op, EMIS_op]
     EMIS_op >> _duplicate >> [DUPLICATE_op, NOT_DUPLICATE_op]
-    NOT_DUPLICATE_op >> _EMISOpen >> _sendResponse >> _sucess
-    DUPLICATE_op >> _sucess
+    NOT_DUPLICATE_op >> _EMISOpen >> _sendResponse
 
-    GPConnect_op >> _FHIRDocument >> _pdf >> _sendMESH >> _sucess
+    GPConnect_op >> _FHIRDocument >> _pdf >> _sendMESH
 
-    _NHSTrust >> _message >> _sendTrust >> _sucess
+    _NHSTrust >> _message >> _sendTrust
 
-    TPP_op >> _sucess
-
+    [_sendResponse, _sendMESH, TPP_op, DUPLICATE_op] >> _doneGPSend >> _success
