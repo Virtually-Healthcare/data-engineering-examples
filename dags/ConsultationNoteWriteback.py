@@ -85,7 +85,7 @@ with (DAG(
         start_date=datetime(2022, 1, 1)
 ) as dag2):
 
-    options = ["EMIS", "TPP", "GPConnect"]
+    options = ["EMIS", "TPP", "GPConnect_SendDocument"]
 
     @task(task_id="start")
     def start(**context):
@@ -121,7 +121,7 @@ with (DAG(
     def get_destination_endpoint(record):
         return "EMIS"
 
-    @task(task_id="check_consultation_not_already_present_in_EMIS")
+    @task.branch(task_id="check_consultation_not_already_present_in_EMIS")
     def check_consultation_not_already_present_in_EMIS(record):
         headersEMIS = {"Accept": "application/fhir+json",
                        "ODS_CODE": "F83004"}
@@ -155,9 +155,8 @@ with (DAG(
                 if 'resourceType' in entry['resource'] and entry['resource']['resourceType'] == 'Composition':
                     print('Have composition')
                     if 'encounter' in entry['resource'] and 'identifier' in entry['resource']['encounter'] and entry['resource']['encounter']['identifier']['value'] == encounterId :
-                        print('DUPLICATE SHOULD GRACEFULLY FINISH')
-                        raise ValueError('Consultation Note already present for this encounter.')
-        return record
+                        return "DUPLICATE"
+        return "NOT_DUPLICATE"
 
     @task.branch(task_id="perform_FHIR_Validation",retries=3)
     def perform_FHIR_Validation(record):
@@ -226,14 +225,10 @@ with (DAG(
         if failed:
             print("FAILED Validation")
             return "FAIL"
-            #record['task']['status'] = 'failed'
-            #response = requests.put(cdrFHIRUrl + '/Task/' + task['id'],json.dumps(task),headers=headersCDR)
-            #print(response.text)
-            #break
         return "PASS"
 
-    @task(task_id="convert_to_emisopen",retries=3)
-    def convert_to_emisopen(record):
+    @task(task_id="convert_to_EMISOpen",retries=3)
+    def convert_to_EMISOpen(record):
         headersEMIS = {"Content-Type": "application/fhir+json",
                        "ODS_CODE": "F83004"}
         responseEMISTransform = requests.post(emisFHIRUrl + '/Bundle/$transform-EMISOpen', record['response'], headers=headersEMIS )
@@ -245,8 +240,8 @@ with (DAG(
         }
         return EMISOpenRecords
 
-    @task(task_id="send_to_emis")
-    def send_to_emis(EMISOpen):
+    @task(task_id="send_to_EMIS")
+    def send_to_EMIS(EMISOpen):
         headersEMIS = {"Content-Type": "application/fhir+json",
                        "ODS_CODE": "F83004"}
         body = {
@@ -269,13 +264,29 @@ with (DAG(
     def convert_to_FHIR_Document(_collection):
         return "TODO: convert to FHIR Document"
 
-    @task(task_id="convert_to_PDF",retries=3)
-    def convert_to_PDF(_FHIRDocument):
+    @task(task_id="transform_to_PDF",retries=3)
+    def transform_to_PDF(_FHIRDocument):
         return "TODO: convert to PDF"
 
     @task(task_id="send_to_MESH",retries=3)
     def send_to_MESH(_PDF):
         return "TODO: send to MESH"
+
+    @task(task_id="get_PDS_Patient",retries=3)
+    def get_PDS_Patient(_task):
+        return "TODO: Get PDS Patient"
+
+    @task(task_id="NHS_Trust_FUTURE",retries=3)
+    def NHS_Trust_FUTURE():
+        return "TODO: NHS Trust - Future"
+
+    @task(task_id="convert_to_HL7_v2_ADT_A04",retries=3)
+    def convert_to_HL7_v2_ADT_A04(_collection):
+        return "TODO: Convert to HL7 ADT A04"
+
+    @task(task_id="send_to_Trust_Integration_Engine",retries=3)
+    def send_to_Trust_Integration_Engine(_message):
+        return "TODO: Send to Trust Integration Engine"
 
     _task = start()
     _sucess= sucess(_task)
@@ -283,26 +294,39 @@ with (DAG(
     _collection = get_consultation(_task)
     _duplicate = check_consultation_not_already_present_in_EMIS(_collection)
     _valid = perform_FHIR_Validation(_collection)
-    _EMISOpen = convert_to_emisopen(_collection)
-    _sendResponse = send_to_emis(_EMISOpen)
+    _EMISOpen = convert_to_EMISOpen(_collection)
+    _sendResponse = send_to_EMIS(_EMISOpen)
     _endpoint = get_destination_endpoint(_collection)
-
+    _pdsPatient = get_PDS_Patient(_task)
     _FHIRDocument = convert_to_FHIR_Document(_collection)
-    _pdf = convert_to_PDF(_FHIRDocument)
+    _pdf = transform_to_PDF(_FHIRDocument)
     _sendMESH = send_to_MESH(_pdf)
+
+    _NHSTrust = NHS_Trust_FUTURE()
+    _message = convert_to_HL7_v2_ADT_A04(_collection)
+    _sendTrust = send_to_Trust_Integration_Engine(_message)
 
     EMIS_op = EmptyOperator(task_id="EMIS", dag=dag2)
     TPP_op = EmptyOperator(task_id="TPP", dag=dag2)
-    GPConnect_op = EmptyOperator(task_id="GPConnect", dag=dag2)
+    GPConnect_op = EmptyOperator(task_id="GPConnect_SendDocument", dag=dag2)
     PASS_op = EmptyOperator(task_id="PASS", dag=dag2)
     FAIL_op = EmptyOperator(task_id="FAIL", dag=dag2)
+    DUPLICATE_op = EmptyOperator(task_id="DUPLICATE", dag=dag2)
+    NOT_DUPLICATE_op = EmptyOperator(task_id="NOT_DUPLICATE", dag=dag2)
 
     _task >> _collection >> _valid >> [PASS_op, FAIL_op]
 
-    PASS_op >> _endpoint >> [TPP_op, GPConnect_op, EMIS_op]
+    PASS_op >> _pdsPatient >> [_endpoint, _NHSTrust]
     FAIL_op >> _error
 
-    EMIS_op >> _duplicate >>  _EMISOpen >> _sendResponse >> _sucess
+    _endpoint >> [TPP_op, GPConnect_op, EMIS_op]
+    EMIS_op >> _duplicate >> [DUPLICATE_op, NOT_DUPLICATE_op]
+    NOT_DUPLICATE_op >> _EMISOpen >> _sendResponse >> _sucess
+    DUPLICATE_op >> _sucess
+
     GPConnect_op >> _FHIRDocument >> _pdf >> _sendMESH >> _sucess
+
+    _NHSTrust >> _message >> _sendTrust >> _sucess
+
     TPP_op >> _sucess
 
