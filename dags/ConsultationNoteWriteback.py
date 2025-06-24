@@ -52,7 +52,7 @@ with DAG(
         headersCDR = { "Accept": "application/fhir+json"}
         parameters = {'_sort' : '-authored-on',
                       'authored-on': 'gt2023-01-01',
-                      'status': 'failed'}
+                      'status': 'accepted'}
 
         tasks = []
         response = requests.get(cdrFHIRUrl + '/Task',parameters,headers=headersCDR)
@@ -96,6 +96,10 @@ with (DAG(
 
     @task(task_id="Task_completed")
     def Task_completed(_task):
+        return "end"
+
+    @task(task_id="Task_in-progress")
+    def Task_in_progress(_task):
         return "end"
 
     @task(task_id="Task_failed")
@@ -293,6 +297,7 @@ with (DAG(
 
     _task = Task_accepted()
     _sucess= Task_completed(_task)
+    _inprogress = Task_in_progress(_task)
     _error = Task_failed(_task)
     _collection = get_consultation(_task)
     _duplicate = check_consultation_not_already_present_in_EMIS(_collection)
@@ -317,7 +322,7 @@ with (DAG(
     DUPLICATE_op = EmptyOperator(task_id="DUPLICATE", dag=dag2)
     NOT_DUPLICATE_op = EmptyOperator(task_id="NOT_DUPLICATE", dag=dag2)
 
-    _task >> _collection >> _valid >> [PASS_op, FAIL_op]
+    _task >> _inprogress >> _collection >> _valid >> [PASS_op, FAIL_op]
 
     PASS_op >> _pdsPatient >> [_endpoint, _NHSTrust]
     FAIL_op >> _error
