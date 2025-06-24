@@ -265,6 +265,18 @@ with (DAG(
         }
         return sendResponse
 
+    @task(task_id="convert_to_FHIR_Document",retries=3)
+    def convert_to_FHIR_Document(_collection):
+        return "TODO: convert to FHIR Document"
+
+    @task(task_id="convert_to_PDF",retries=3)
+    def convert_to_PDF(_FHIRDocument):
+        return "TODO: convert to PDF"
+
+    @task(task_id="send_to_MESH",retries=3)
+    def send_to_MESH(_PDF):
+        return "TODO: send to MESH"
+
     _task = start()
     _sucess= sucess(_task)
     _error = error(_task)
@@ -274,6 +286,10 @@ with (DAG(
     _EMISOpen = convert_to_emisopen(_collection)
     _sendResponse = send_to_emis(_EMISOpen)
     _endpoint = get_destination_endpoint(_collection)
+
+    _FHIRDocument = convert_to_FHIR_Document(_collection)
+    _pdf = convert_to_PDF(_FHIRDocument)
+    _sendMESH = send_to_MESH(_pdf)
 
     EMIS_op = EmptyOperator(task_id="EMIS", dag=dag2)
     TPP_op = EmptyOperator(task_id="TPP", dag=dag2)
@@ -287,5 +303,6 @@ with (DAG(
     FAIL_op >> _error
 
     EMIS_op >> _duplicate >>  _EMISOpen >> _sendResponse >> _sucess
-
+    GPConnect_op >> _FHIRDocument >> _pdf >> _sendMESH >> _sucess
+    TPP_op >> _sucess
 
