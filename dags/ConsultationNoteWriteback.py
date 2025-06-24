@@ -41,7 +41,8 @@ esbFHIRUrl = "http://"+host+":8181/ESB/R4"
 
 with DAG(
         'Consultation_Note_Trigger_Tasks',
-        schedule=None, catchup=False,
+        schedule=timedelta(minutes=2),
+        catchup=False,
         description='Consultation Note Writeback',
         start_date=datetime(2022, 1, 1)
 ) as dag1:
