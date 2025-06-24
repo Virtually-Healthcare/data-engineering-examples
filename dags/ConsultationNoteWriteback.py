@@ -95,17 +95,17 @@ with (DAG(
         return task
 
     @task(task_id="sucess")
-    def sucess(task):
+    def sucess(_task):
         return "end"
 
     @task(task_id="error")
-    def error(task):
+    def error(_task):
         return "error"
 
     @task(task_id="get_consultation")
-    def get_consultation(task):
+    def get_consultation(_task):
         headersCDR = { "Accept": "application/fhir+json"}
-        encounter = task['focus']['identifier']
+        encounter = _task['focus']['identifier']
         parameters = {'identifier' : encounter['system'] + '|' + encounter['value']}
 
         responseCDR = requests.get(cdrFHIRUrl + '/Encounter/$extract-collection',parameters,headers=headersCDR)
@@ -114,7 +114,7 @@ with (DAG(
             print(responseCDR.text)
         return {
             "response": responseCDR.text,
-            "task": task
+            "task": _task
         }
 
     @task.branch(task_id="get_destination_endpoint",retries=0)
