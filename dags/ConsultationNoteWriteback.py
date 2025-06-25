@@ -34,8 +34,9 @@ default_args = {
     # 'trigger_rule': 'all_success'
 }
 
-#host = "192.168.1.59"
-host="192.168.1.94"
+host = "192.168.1.59"
+
+#host="192.168.1.94"
 
 cdrFHIRUrl = "http://"+host+":8180/CDR/FHIR/R4"
 emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"
@@ -61,14 +62,17 @@ with DAG(
 
         tasks = []
         print('get tasks run')
-        response = requests.get(cdrFHIRUrl + '/Task',parameters,headers=headersCDR)
-        if response.status_code == 200:
-            tasksJSON = json.loads(response.text)
-            if 'entry' in tasksJSON:
-                for entry in tasksJSON['entry']:
-                    if 'resource' in entry:
-                        tasks.append(entry['resource'])
-        print("Number of Tasks = {}".format(len(tasks)))
+        try:
+            response = requests.get(cdrFHIRUrl + '/Task',parameters,headers=headersCDR)
+            if response.status_code == 200:
+                tasksJSON = json.loads(response.text)
+                if 'entry' in tasksJSON:
+                    for entry in tasksJSON['entry']:
+                        if 'resource' in entry:
+                            tasks.append(entry['resource'])
+            print("Number of Tasks = {}".format(len(tasks)))
+        except:
+            print("CONNECTION ISSUE")
         return tasks
 
     _tasks = get_tasks()
@@ -127,16 +131,18 @@ with DAG(
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
         print(response.text)
+        raise ValueError('Task Failed - Data issue detected with Consultation Note')
         return "error"
 
 
     def Task_cancelled(context):
         print("Task cancelled")
         print(context)
-        #_task['status'] = 'cancelled'
-        #headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
-        #response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
-        #print(response.text)
+        _task['status'] = 'cancelled'
+        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
+        response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
+        print(response.text)
+        raise ValueError('Task Failed - Technical Issue')
         return "Task Cancelled"
 
     @task(task_id="Done_Primary_Care_Send", trigger_rule="one_success")
@@ -200,7 +206,8 @@ with DAG(
                         return "DUPLICATE"
         return "NOT_DUPLICATE"
 
-    @task.branch(task_id="perform_FHIR_Validation",retries=3)
+    @task.branch(task_id="perform_FHIR_Validation",
+                 retries=3)
     def perform_FHIR_Validation(record):
         headersESB = {"Content-Type": "application/fhir+json",
                       "ODS_CODE": "F83004"}

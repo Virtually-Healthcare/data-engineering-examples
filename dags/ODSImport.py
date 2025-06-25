@@ -23,8 +23,11 @@ import json
 
 maxentries = 35000
 fullLoad = True
+
 host = "192.168.1.59"
 #host="192.168.1.94"
+
+
 # this is the superserver port
 port = 32782
 namespace = "FHIRSERVER"
