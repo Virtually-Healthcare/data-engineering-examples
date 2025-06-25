@@ -340,8 +340,8 @@ with DAG(
         resource["type"] = "message"
         myuuid = uuid.uuid4()
         resource["identifier"] = {
-            "system": "https://tools.ietf.org/html/rfc4122",
-            "value": str(myuuid)
+            "system": "urn:ietf:rfc:3986",
+            "value": 'urn:uuid:' + str(myuuid)
         }
         messageHeader = {
             "resourceType" : "MessageHeader",
