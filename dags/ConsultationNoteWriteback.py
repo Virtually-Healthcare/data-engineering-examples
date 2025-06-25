@@ -5,10 +5,11 @@ from airflow import DAG
 from airflow.decorators import dag, task
 import requests
 import json
+import uuid
 
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
-from more_itertools.more import run_length
+
 
 default_args = {
     'owner': 'airflow',
@@ -33,8 +34,8 @@ default_args = {
     # 'trigger_rule': 'all_success'
 }
 
-host = "192.168.1.59"
-##host="192.168.1.94"
+#host = "192.168.1.59"
+host="192.168.1.94"
 
 cdrFHIRUrl = "http://"+host+":8180/CDR/FHIR/R4"
 emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"
@@ -103,7 +104,7 @@ with DAG(
         print("Started Task id = "+task['id'])
         return task
 
-    @task(task_id="Task_completed", trigger_rule="none_failed")
+    @task(task_id="Task_completed", trigger_rule="all_success")
     def Task_completed(_task):
         _task['status'] = 'completed'
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
@@ -322,8 +323,67 @@ with DAG(
         return "TODO: NHS Trust - Future"
 
     @task(task_id="convert_to_HL7_v2_ADT_A04_FUTURE_TODO",retries=3, on_failure_callback = [Task_cancelled])
-    def convert_to_HL7_v2_ADT_A04(_collection):
+    def convert_to_HL7_v2_ADT_A04(record):
         return "TODO: Convert to HL7 ADT A04"
+
+
+    @task(task_id="convert_to_HL7_FHIR_Message_A04",retries=3, on_failure_callback = [Task_cancelled])
+    def convert_to_HL7_FHIR_Message_A04(record):
+        resource = json.loads(record['response'])
+        resource["type"] = "message"
+        myuuid = uuid.uuid4()
+        resource["identifier"] = {
+            "system": "https://tools.ietf.org/html/rfc4122",
+            "value": str(myuuid)
+        }
+        messageHeader = {
+            "resourceType" : "MessageHeader",
+            "eventCoding" : {
+                "system" : "http://terminology.hl7.org/CodeSystem/v2-0003",
+                "code" : "A04"
+            },
+            "destination" : [
+                {
+                    "endpoint" : "http://ec2-18-130-139-120.eu-west-2.compute.amazonaws.com/emis",
+                    "receiver" : {
+                        "identifier" : {
+                            "system" : "https://fhir.nhs.uk/Id/ods-organization-code",
+                            "value" : "F83004"
+                        }
+                    }
+                }
+            ],
+            "sender" : {
+                "identifier" : {
+                    "system" : "https://fhir.nhs.uk/Id/ods-organization-code",
+                    "value" : "F83004"
+                }
+            },
+            "source" : {
+                "endpoint" : "http://ec2-18-130-139-120.eu-west-2.compute.amazonaws.com/emis"
+            },
+            "focus" : [
+            ]
+        }
+        for entry in resource.get('entry', []):
+            if 'resource' in entry:
+                if 'resourceType' in entry['resource']:
+                    resourceType = entry['resource']['resourceType']
+                    if resourceType == 'Encounter':
+                        print("Encounter")
+                        messageHeader['focus'].append({
+                            "reference" : entry['fullUrl'],
+                            "type": "Encounter"
+                        })
+        resource["entry"].insert(0,{
+            "fullUrl": "urn:uuid:" + str(myuuid),
+            "resource": messageHeader
+        })
+        print(json.dumps(resource))
+        return {
+            "response" : json.dumps(resource),
+            "task": record['task']
+        }
 
     @task(task_id="send_to_Trust_Integration_Engine_FUTURE_TODO",retries=3)
     def send_to_Trust_Integration_Engine(_message):
@@ -335,20 +395,22 @@ with DAG(
     _inprogress = Task_in_progress(_task)
     _success= Task_completed(_task)
     _error = Task_failed(_task)
-    _collection = get_consultation(_task)
-    _duplicate = check_consultation_not_already_present_in_EMIS(_collection)
-    _valid = perform_FHIR_Validation(_collection)
-    _EMISOpen = convert_to_EMISOpen(_collection)
+    _FHIRcollection = get_consultation(_task)
+    _duplicate = check_consultation_not_already_present_in_EMIS(_FHIRcollection)
+    _FHIRmessage = convert_to_HL7_FHIR_Message_A04(_FHIRcollection)
+    _valid = perform_FHIR_Validation(_FHIRmessage)
+    _EMISOpen = convert_to_EMISOpen(_FHIRcollection)
     _sendResponse = send_to_EMIS(_EMISOpen)
-    _endpoint = get_Primary_Care_Endpoint(_collection)
+    _endpoint = get_Primary_Care_Endpoint(_FHIRcollection)
     _pdsPatient = get_PDS_Patient(_task)
-    _FHIRDocument = convert_to_FHIR_Document(_collection)
+    _FHIRDocument = convert_to_FHIR_Document(_FHIRcollection)
     _pdf = transform_to_PDF(_FHIRDocument)
     _sendMESH = send_to_MESH(_pdf)
 
     _NHSTrust = NHS_Trust_FUTURE()
-    _message = convert_to_HL7_v2_ADT_A04(_collection)
-    _sendTrust = send_to_Trust_Integration_Engine(_message)
+    _v2message = convert_to_HL7_v2_ADT_A04(_FHIRcollection)
+
+    _sendTrust = send_to_Trust_Integration_Engine(_v2message)
     _doneGPSend = Done_Primary_Care_Send()
     #_cancelled = Task_cancelled(_task)
 
@@ -361,17 +423,17 @@ with DAG(
     NOT_DUPLICATE_op = EmptyOperator(task_id="NOT_DUPLICATE", dag=dag2)
 
 
-    _task >> _inprogress >> _collection >> _valid >> [PASS_op, FAIL_op]
+    _task >> _inprogress >> _FHIRcollection >> _FHIRmessage >> _valid >> [PASS_op, FAIL_op]
 
     PASS_op >> _pdsPatient >> [_endpoint, _NHSTrust]
     FAIL_op >> _error
 
-    _endpoint >> [TPP_op, GPConnect_op, EMIS_op]
+    _endpoint >>  [TPP_op, GPConnect_op, EMIS_op]
     EMIS_op >> _duplicate >> [DUPLICATE_op, NOT_DUPLICATE_op]
     NOT_DUPLICATE_op >> _EMISOpen >> _sendResponse
 
     GPConnect_op >> _FHIRDocument >> _pdf >> _sendMESH
 
-    _NHSTrust >> _message >> _sendTrust
+    _NHSTrust >> _v2message >> _sendTrust
 
     [_sendResponse, _sendMESH, TPP_op, DUPLICATE_op] >> _doneGPSend >> _success
