@@ -270,7 +270,8 @@ with DAG(
                     if 'expression' in issue:
                         print(issue['expression'])
                     print('')
-
+        if responseValidate.status_code != 200:
+            raise ValueError('Task Failed - FHIR Validation Fatal Issue')
         if failed:
             print("FAILED Validation")
             return "FAIL"
