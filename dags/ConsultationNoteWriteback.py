@@ -169,7 +169,7 @@ with DAG(
                     if resourceType == 'QuestionnaireResponse':
                         entry['resource'] = LegacyQuestionnaireResponseConversion(entry['resource'])
         return {
-            "response": resource,
+            "response": json.dumps(resource),
             "task": _task
         }
 
@@ -276,7 +276,7 @@ with DAG(
 
         if problemsFound:
             newQR['item'].append(problems)
-        print(json.dumps(newQR))
+        #print(json.dumps(newQR))
         return newQR
 
     @task.branch(task_id="perform_FHIR_Validation",
