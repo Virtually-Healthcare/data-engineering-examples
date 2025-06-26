@@ -6,6 +6,7 @@ from airflow.decorators import dag, task
 import requests
 import json
 import uuid
+import copy
 
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
@@ -206,6 +207,70 @@ with DAG(
                         return "DUPLICATE"
         return "NOT_DUPLICATE"
 
+
+    def LegacyQuestionnaireResponseConversion(questionnaireResponse):
+        questionnaireResponse['questionnaire'] = "https://fhir.virtually.healthcare/Questionnaire/ClinicalManagementPlan"
+        newQR = copy.deepcopy(questionnaireResponse)
+        newQR['item'] = [{
+            "linkId": "LOINC/61149-1",
+            "text": "Comments and advice",
+            "item": []
+        }]
+        # missing linkId - assume it's the problem section
+        problems = {
+            "linkId": "LOINC/11450-4",
+            "text": "Problem list",
+            "item": []
+        }
+        problemsFound = False
+        for item in questionnaireResponse.get('item', []):
+            # exiting fat entries are plain questions and answers
+            if 'answer' in item:
+                newQR['item'][0]['item'].append({
+                    "linkId" : "questions",
+                    "item": [{
+                        "linkId": "question",
+                        "answer": [ {
+                            "valueString": item['text']
+                        }]
+                    },
+                        {
+                            "linkId": "answer",
+                            "answer": [ {
+                                "valueString": item['answer'][0]["valueString"]
+                            }]
+                        }]
+                })
+            # problem management comes as a set of subitems.
+            if 'item' in item:
+                problem = {
+                    "linkId": "problem",
+                    "text": "Problem",
+                    "item": []
+                }
+                problemFound = False
+                for problemitem in item.get('item', []):
+                    if 'linkId' not in problemitem:
+                        newitem = {
+                            'linkId' : 'problemCode',
+                            'text' : "Problem Code",
+                            'answer' : problemitem['answer']
+                        }
+                        problem['item'].append(newitem)
+                    if 'item' in problemitem:
+                        for subitem in problemitem.get('item', []):
+                            if subitem['linkId'] == 'problemStatus' or subitem['linkId'] == 'problemSignificance' or subitem['linkId'] == 'problemType' or subitem['linkId'] == 'problemExpectedDuration':
+                                problem['item'].append(subitem)
+                                problemFound = True
+                if problemFound:
+                    problems['item'].append(problem)
+                    problemsFound = True
+
+        if problemsFound:
+            newQR['item'].append(problems)
+        print(json.dumps(newQR))
+        return newQR
+
     @task.branch(task_id="perform_FHIR_Validation",
                  retries=3)
     def perform_FHIR_Validation(record):
@@ -220,21 +285,7 @@ with DAG(
                 if 'resourceType' in entry['resource']:
                     resourceType = entry['resource']['resourceType']
                     if resourceType == 'QuestionnaireResponse':
-                        # add in the questionnaire
-                        if 'questionnaire' not in entry['resource']:
-                            entry['resource']['questionnaire'] = "https://fhir.virtually.healthcare/Questionnaire/ConsultationNote"
-                        # missing linkId - assume it's the problem section
-                        for item in entry['resource'].get('item', []):
-                            if 'linkId' not in item:
-                                item['linkId'] = 'fat-14'
-                            # move the nested items to correct level
-                            for subitem in item.get('item', []):
-                                if 'linkId' not in subitem:
-                                    subitem['linkId'] = 'problem'
-                                for nesteditem in subitem.get('item', []):
-                                    item['item'].append(nesteditem)
-                                subitem['item'] = []
-                        #print(json.dumps(entry['resource']))
+                        entry['resource'] = LegacyQuestionnaireResponseConversion(entry['resource'])
         # end of fix
 
         responseValidate = requests.post(esbFHIRUrl + '/$validate', json.dumps(resource), headers=headersESB)
