@@ -222,7 +222,7 @@ with DAG(
                     if resourceType == 'QuestionnaireResponse':
                         # add in the questionnaire
                         if 'questionnaire' not in entry['resource']:
-                            entry['resource']['questionnaire'] = "https://fhir.virtually.healthcare/Questionnaire/ClinicalManagementPlan"
+                            entry['resource']['questionnaire'] = "https://fhir.virtually.healthcare/Questionnaire/ConsultationNote"
                         # missing linkId - assume it's the problem section
                         for item in entry['resource'].get('item', []):
                             if 'linkId' not in item:
