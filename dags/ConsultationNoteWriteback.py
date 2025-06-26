@@ -160,8 +160,16 @@ with DAG(
         if responseCDR.status_code == 200:
             print("======= Response from extract collection ========")
             print(responseCDR.text)
+
+        resource = json.loads(responseCDR.text)
+        for entry in resource.get('entry', []):
+            if 'resource' in entry:
+                if 'resourceType' in entry['resource']:
+                    resourceType = entry['resource']['resourceType']
+                    if resourceType == 'QuestionnaireResponse':
+                        entry['resource'] = LegacyQuestionnaireResponseConversion(entry['resource'])
         return {
-            "response": responseCDR.text,
+            "response": resource,
             "task": _task
         }
 
@@ -279,13 +287,7 @@ with DAG(
         # begin fix the bundle
         resource = json.loads(record['response'])
         id = 0
-        for entry in resource.get('entry', []):
-            id += 1
-            if 'resource' in entry:
-                if 'resourceType' in entry['resource']:
-                    resourceType = entry['resource']['resourceType']
-                    if resourceType == 'QuestionnaireResponse':
-                        entry['resource'] = LegacyQuestionnaireResponseConversion(entry['resource'])
+
         # end of fix
 
         responseValidate = requests.post(esbFHIRUrl + '/$validate', json.dumps(resource), headers=headersESB)
