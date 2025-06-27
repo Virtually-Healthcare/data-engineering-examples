@@ -150,10 +150,14 @@ with DAG(
         print("Task Updated to cancelled")
         print(response.status_code)
         exception = context.get('exception')
-        print(exception)
-        formatted_exception = ''.join(
-        traceback.format_exception(etype=type(exception), value=exception, tb=exception.__traceback__)).strip()
-        print(formatted_exception)
+        try:
+            print(exception)
+            formatted_exception = ''.join(traceback.format_exception(etype=type(exception), value=exception, tb=exception.__traceback__)).strip()
+            print(formatted_exception)
+        except NameError:
+            print("well, it WASN'T defined after all!")
+        else:
+            print('Exception not defined')
         raise ValueError('Task Failed - Technical Issue')
 
 
@@ -172,19 +176,23 @@ with DAG(
             print("======= Response from extract collection ========")
             print(responseCDR.text)
         else:
-            raise ValueError('Task Failed - Get Consultation')
+            raise ValueError('Task Failed - Get Consultation - Technical Error')
 
         resource = json.loads(responseCDR.text)
-        for entry in resource.get('entry', []):
-            if 'resource' in entry:
-                if 'resourceType' in entry['resource']:
-                    resourceType = entry['resource']['resourceType']
-                    if resourceType == 'QuestionnaireResponse':
-                        entry['resource'] = LegacyQuestionnaireResponseConversion(entry['resource'])
-        return {
-            "response": json.dumps(resource),
-            "task": _task
-        }
+
+        if 'entry' not in resource:
+            raise ValueError('Task Failed - Get Consultation No consultation found')
+        else:
+            for entry in resource.get('entry', []):
+                if 'resource' in entry:
+                    if 'resourceType' in entry['resource']:
+                        resourceType = entry['resource']['resourceType']
+                        if resourceType == 'QuestionnaireResponse':
+                            entry['resource'] = LegacyQuestionnaireResponseConversion(entry['resource'])
+            return {
+                "response": json.dumps(resource),
+                "task": _task
+            }
 
     @task.branch(task_id="get_Primary_Care_Endpoint",retries=0)
     def get_Primary_Care_Endpoint(record):
