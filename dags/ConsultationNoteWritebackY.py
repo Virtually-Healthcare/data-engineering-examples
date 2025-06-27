@@ -7,6 +7,7 @@ import requests
 import json
 import uuid
 import copy
+import traceback
 
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
@@ -34,21 +35,21 @@ default_args = {
     # 'sla_miss_callback': yet_another_function,
     # 'trigger_rule': 'all_success'
 }
+host = "192.168.1.59"
 
-#host = "192.168.1.59"
-
-host="192.168.1.94"
+#host="192.168.1.94"
 
 cdrFHIRUrl = "http://"+host+":8180/CDR/FHIR/R4"
 emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"
 esbFHIRUrl = "http://"+host+":8181/ESB/R4"
 
 with DAG(
-        'Consultation_Note_Trigger_Tasks',
+        'Consultation_Note_Trigger_TasksY',
         schedule=timedelta(minutes=1),
         catchup=False,
-        description='Consultation Note Writeback',
-        start_date=datetime(2022, 1, 1)
+        description='Consultation Note WritebackY',
+        start_date=datetime(2022, 1, 1),
+        tags=['FHIR','Workflow'],
 ) as Parent_dag:
 
     @task
@@ -85,7 +86,7 @@ with DAG(
         _trigger_send_task_dag = TriggerDagRunOperator(
             #  task_id=f"trigger_consultation_task",
             task_id=f"trigger_consultation_task_{id}",
-            trigger_dag_id="Consultation_Note_Task",
+            trigger_dag_id="Consultation_Note_Task_Y",
             conf={"_task": _task},
             dag=Parent_dag
         )
@@ -94,10 +95,11 @@ with DAG(
     #_trigger_send_task_dag >> _done
 
 with DAG(
-        'Consultation_Note_Task',
+        'Consultation_Note_Task_Y',
         schedule=None,
-        description='Consultation Note Writeback',
-        start_date=datetime(2022, 1, 1)
+        description='Consultation Note Writeback Y',
+        start_date=datetime(2022, 1, 1),
+        tags=['FHIR','Workflow','EMIS','GPConnect'],
 ) as dag2:
 
     options = ["EMIS", "TPP", "GPConnect_SendDocument"]
@@ -136,23 +138,14 @@ with DAG(
         return "error"
 
     def Task_cancelled(context):
-        print("======== Task cancelled ==========")
+        print("Task cancelled")
         print(context)
-        task = context["dag_run"].conf["_task"]
-        print(task)
-        _task = json.loads(json.dumps(task))
         _task['status'] = 'cancelled'
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
-        # TODO investigate why these extra steps don't get logged
-        print("Task Updated to cancelled")
-        print(response.status_code)
-        exception = context.get('exception')
-        print(exception)
-        #formatted_exception = ''.join(
-        #traceback.format_exception(etype=type(exception), value=exception, tb=exception.__traceback__)).strip()
-        #print(formatted_exception)
-        return "Task Cancelled"
+        print(response.text)
+        raise ValueError('Task Failed - Technical Issue')
+
 
     @task(task_id="Done_Primary_Care_Send", trigger_rule="one_success")
     def Done_Primary_Care_Send():
@@ -255,7 +248,7 @@ with DAG(
                     },
                         {
                             "linkId": "answer",
-                            "answer": [ ]
+                            "answer": []
                         }]
                 }
                 for answer in item['answer']:
