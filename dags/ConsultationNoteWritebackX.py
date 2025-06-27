@@ -60,6 +60,7 @@ with DAG(
         headersCDR = { "Accept": "application/fhir+json"}
         parameters = {'_sort' : '-authored-on',
                       'authored-on': 'gt2023-01-01',
+                      '_count': '5',
                       'status': 'accepted'}
 
         tasks = []
@@ -303,8 +304,10 @@ with DAG(
         return newQR
 
     @task.branch(task_id="perform_FHIR_Validation",
+                 execution_timeout=timedelta(seconds=400),
                  retries=3)
     def perform_FHIR_Validation(record):
+        # The FHIR Validate has a timeout of 3 mins at present 400 = 3 * 60 + 40
         headersESB = {"Content-Type": "application/fhir+json",
                       "ODS_CODE": "F83004"}
         # begin fix the bundle
