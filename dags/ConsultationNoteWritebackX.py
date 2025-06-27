@@ -52,6 +52,10 @@ with DAG(
         start_date=datetime(2022, 1, 1)
 ) as Parent_dag:
 
+    def utcStamp():
+        ts = datetime.now()
+        return ts.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
     @task
     def done():
         print("Done")
@@ -72,10 +76,17 @@ with DAG(
                 if 'entry' in tasksJSON:
                     for entry in tasksJSON['entry']:
                         if 'resource' in entry:
+                            if 'note' not in entry['resource']:
+                                entry['resource']['note'] = []
+                            entry['resource']['note'].append({
+                                "time": utcStamp(),
+                                "text": "accepted"
+                            })
                             tasks.append(entry['resource'])
             print("Number of Tasks = {}".format(len(tasks)))
-        except:
-            print("CONNECTION ISSUE")
+        except Exception as e:
+            print(e)
+            raise ValueError(e)
         return tasks
 
     _tasks = get_tasks()
@@ -104,6 +115,11 @@ with DAG(
 
     options = ["EMIS", "TPP", "GPConnect_SendDocument"]
 
+    def utcStamp():
+        ts = datetime.now()
+        return ts.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+
     @task(task_id="Task_accepted")
     def Task_accepted(**context):
         print(context["params"]["_task"])
@@ -114,15 +130,27 @@ with DAG(
     @task(task_id="Task_completed", trigger_rule="all_success")
     def Task_completed(_task):
         _task['status'] = 'completed'
+        if 'note' not in _task:
+            _task['note'] = []
+        _task['note'].append({
+            "time": utcStamp(),
+            "text": "Consultation written back to EPR system"
+        })
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
+
         print(response.text)
         return "completed"
 
     @task(task_id="Task_in-progress")
     def Task_in_progress(_task):
-
         _task['status'] = 'in-progress'
+        if 'note' not in _task:
+            _task['note'] = []
+        _task['note'].append({
+            "time": utcStamp(),
+            "text": "In progress"
+        })
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
         print(response.text)
@@ -131,6 +159,12 @@ with DAG(
     @task(task_id="Task_failed")
     def Task_failed(_task):
         _task['status'] = 'failed'
+        if 'note' not in _task:
+            _task['note'] = []
+        _task['note'].append({
+            "time": utcStamp(),
+            "text": "Failed TODO Add reason"
+        })
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
         print(response.text)
@@ -144,6 +178,12 @@ with DAG(
         task = context["dag_run"].conf["_task"]
         _task = json.loads(json.dumps(task))
         _task['status'] = 'cancelled'
+        if 'note' not in _task:
+            _task['note'] = []
+        _task['note'].append({
+            "time": utcStamp(),
+            "text": "Cancelled TODO Add reason"
+        })
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
 
@@ -387,11 +427,21 @@ with DAG(
         if responseEMISSend.status_code == 200:
             print("======= Send to EMIS Open ========")
             print(responseEMISSend.text)
-            sendResponse = {
-                "response" : responseEMISSend.text,
-                "task": EMISOpen['task']
-            }
-            return sendResponse
+            outcomeJSON = json.loads(responseEMISSend.text)
+            if 'resourceType' in outcomeJSON and outcomeJSON['resourceType'] == 'OperationOutcome' and 'issue' in outcomeJSON:
+                if 'severity' in outcomeJSON['issue'][0] and outcomeJSON['issue'][0]['severity'] == 'information' :
+                    sendResponse = {
+                        "response" : responseEMISSend.text,
+                        "task": EMISOpen['task']
+                    }
+                    return sendResponse
+                else:
+                    diagnostics = ''
+                    if 'diagnostics' in outcomeJSON['issue'][0]:
+                        diagnostics = outcomeJSON['issue'][0]['diagnostics']
+                    raise ValueError('Task Failed - send to EMISOpen Expected information issue '+ diagnostics)
+            else:
+                raise ValueError('Task Failed - send to EMISOpen Unexpected Response')
         else:
             raise ValueError('Task Failed - send to EMISOpen')
 
