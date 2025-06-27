@@ -2,3 +2,4 @@ intersystems-irispython
 sqlalchemy-iris
 fhir.resources
 fhirpy
+traceback2

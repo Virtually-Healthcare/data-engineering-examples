@@ -35,9 +35,9 @@ default_args = {
     # 'trigger_rule': 'all_success'
 }
 
-host = "192.168.1.59"
+#host = "192.168.1.59"
 
-#host="192.168.1.94"
+host="192.168.1.94"
 
 cdrFHIRUrl = "http://"+host+":8180/CDR/FHIR/R4"
 emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"
@@ -135,22 +135,30 @@ with DAG(
         raise ValueError('Task Failed - Data issue detected with Consultation Note')
         return "error"
 
-
     def Task_cancelled(context):
-        print("Task cancelled")
+        print("======== Task cancelled ==========")
         print(context)
+        task = context["dag_run"].conf["_task"]
+        print(task)
+        _task = json.loads(json.dumps(task))
         _task['status'] = 'cancelled'
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
-        print(response.text)
-        raise ValueError('Task Failed - Technical Issue')
+        # TODO investigate why these extra steps don't get logged
+        print("Task Updated to cancelled")
+        print(response.status_code)
+        exception = context.get('exception')
+        print(exception)
+        #formatted_exception = ''.join(
+        #traceback.format_exception(etype=type(exception), value=exception, tb=exception.__traceback__)).strip()
+        #print(formatted_exception)
         return "Task Cancelled"
 
     @task(task_id="Done_Primary_Care_Send", trigger_rule="one_success")
     def Done_Primary_Care_Send():
         return "One GPSend success"
 
-    @task(task_id="get_consultation")
+    @task(task_id="get_consultation", on_failure_callback = [Task_cancelled])
     def get_consultation(_task):
         headersCDR = { "Accept": "application/fhir+json"}
         encounter = _task['focus']['identifier']
@@ -160,7 +168,8 @@ with DAG(
         if responseCDR.status_code == 200:
             print("======= Response from extract collection ========")
             print(responseCDR.text)
-
+        else :
+            raise ValueError('Task Failed - Extract collection Fatal Issue')
         resource = json.loads(responseCDR.text)
         for entry in resource.get('entry', []):
             if 'resource' in entry:
@@ -234,7 +243,9 @@ with DAG(
         for item in questionnaireResponse.get('item', []):
             # exiting fat entries are plain questions and answers
             if 'answer' in item:
-                newQR['item'][0]['item'].append({
+                if 'text' not in item:
+                    item['text'] = item['linkId']
+                newItem = {
                     "linkId" : "questions",
                     "item": [{
                         "linkId": "question",
@@ -244,11 +255,12 @@ with DAG(
                     },
                         {
                             "linkId": "answer",
-                            "answer": [ {
-                                "valueString": item['answer'][0]["valueString"]
-                            }]
+                            "answer": [ ]
                         }]
-                })
+                }
+                for answer in item['answer']:
+                    newItem['item'][1]['answer'].append(answer)
+                newQR['item'][0]['item'].append(newItem)
             # problem management comes as a set of subitems.
             if 'item' in item:
                 problem = {
