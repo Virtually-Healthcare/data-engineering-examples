@@ -35,9 +35,9 @@ default_args = {
     # 'sla_miss_callback': yet_another_function,
     # 'trigger_rule': 'all_success'
 }
-host = "192.168.1.59"
+#host = "192.168.1.59"
 
-#host="192.168.1.94"
+host="192.168.1.94"
 
 cdrFHIRUrl = "http://"+host+":8180/CDR/FHIR/R4"
 emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"

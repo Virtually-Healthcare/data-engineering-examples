@@ -10,6 +10,7 @@ import copy
 
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
+import traceback
 
 
 default_args = {
@@ -35,9 +36,9 @@ default_args = {
     # 'trigger_rule': 'all_success'
 }
 
-#host = "192.168.1.59"
+host = "192.168.1.59"
 
-host="192.168.1.94"
+#host="192.168.1.94"
 
 cdrFHIRUrl = "http://"+host+":8180/CDR/FHIR/R4"
 emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"
@@ -115,7 +116,7 @@ with DAG(
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
         print(response.text)
-        return "end"
+        return "completed"
 
     @task(task_id="Task_in-progress")
     def Task_in_progress(_task):
@@ -124,7 +125,7 @@ with DAG(
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
         print(response.text)
-        return "end"
+        return "in-progress"
 
     @task(task_id="Task_failed")
     def Task_failed(_task):
@@ -133,16 +134,26 @@ with DAG(
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
         print(response.text)
         raise ValueError('Task Failed - Data issue detected with Consultation Note')
-        return "error"
+        #return "error"
 
 
     def Task_cancelled(context):
-        print("Task cancelled")
+        print("======== Task cancelled ==========")
         print(context)
+        task = context["dag_run"].conf["_task"]
+        _task = json.loads(json.dumps(task))
         _task['status'] = 'cancelled'
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
-        print(response.text)
+
+        # TODO investigate why these extra steps don't get loggedAdd commentMore actions
+        print("Task Updated to cancelled")
+        print(response.status_code)
+        exception = context.get('exception')
+        print(exception)
+        formatted_exception = ''.join(
+        traceback.format_exception(etype=type(exception), value=exception, tb=exception.__traceback__)).strip()
+        print(formatted_exception)
         raise ValueError('Task Failed - Technical Issue')
 
 
@@ -155,11 +166,13 @@ with DAG(
         headersCDR = { "Accept": "application/fhir+json"}
         encounter = _task['focus']['identifier']
         parameters = {'identifier' : encounter['system'] + '|' + encounter['value']}
-
+        print('/Encounter/$extract-collection parameters = ' + encounter['system'] + '|' + encounter['value'])
         responseCDR = requests.get(cdrFHIRUrl + '/Encounter/$extract-collection',parameters,headers=headersCDR)
         if responseCDR.status_code == 200:
             print("======= Response from extract collection ========")
             print(responseCDR.text)
+        else:
+            raise ValueError('Task Failed - Get Consultation')
 
         resource = json.loads(responseCDR.text)
         for entry in resource.get('entry', []):
@@ -279,7 +292,6 @@ with DAG(
 
         if problemsFound:
             newQR['item'].append(problems)
-        #print(json.dumps(newQR))
         return newQR
 
     @task.branch(task_id="perform_FHIR_Validation",
@@ -339,12 +351,15 @@ with DAG(
                        "ODS_CODE": "F83004"}
         responseEMISTransform = requests.post(emisFHIRUrl + '/Bundle/$transform-EMISOpen', record['response'], headers=headersEMIS )
         print("======= Response from transform to EMIS Open ========")
-        print(responseEMISTransform.text)
-        EMISOpenRecords = {
-            "response" : responseEMISTransform.text,
-            "task": record['task']
-        }
-        return EMISOpenRecords
+        if responseEMISTransform.status_code == 200:
+            print(responseEMISTransform.text)
+            EMISOpenRecords = {
+                "response" : responseEMISTransform.text,
+                "task": record['task']
+            }
+            return EMISOpenRecords
+        else:
+            raise ValueError('Task Failed - convert to EMISOpen')
 
     @task(task_id="send_to_EMIS", retries = 3, on_failure_callback = [Task_cancelled])
     def send_to_EMIS(EMISOpen):
@@ -358,13 +373,16 @@ with DAG(
         }
 
         responseEMISSend = requests.post(emisFHIRUrl + '/$send-EMISOpen', json.dumps(body), headers=headersEMIS )
-        print("======= Send to EMIS Open ========")
-        print(responseEMISSend.text)
-        sendResponse = {
-            "response" : responseEMISSend.text,
-            "task": EMISOpen['task']
-        }
-        return sendResponse
+        if responseEMISSend.status_code == 200:
+            print("======= Send to EMIS Open ========")
+            print(responseEMISSend.text)
+            sendResponse = {
+                "response" : responseEMISSend.text,
+                "task": EMISOpen['task']
+            }
+            return sendResponse
+        else:
+            raise ValueError('Task Failed - send to EMISOpen')
 
     @task(task_id="convert_to_FHIR_Document",retries=3)
     def convert_to_FHIR_Document(_collection):
@@ -391,7 +409,7 @@ with DAG(
         return "TODO: Convert to HL7 ADT A04"
 
 
-    @task(task_id="convert_to_HL7_FHIR_Message_A04",retries=3, on_failure_callback = [Task_cancelled])
+    @task(task_id="convert_to_HL7_FHIR_Message_A04",retries=0, on_failure_callback = [Task_cancelled])
     def convert_to_HL7_FHIR_Message_A04(record):
         resource = json.loads(record['response'])
         resource["type"] = "message"
