@@ -63,7 +63,7 @@ with DAG(
     def get_tasks():
         headersCDR = { "Accept": "application/fhir+json"}
         parameters = {'_sort' : '-authored-on',
-                      'authored-on': 'gt2023-01-01',
+                      'authored-on': 'gt2025-07-01',
                       '_count': '5',
                       'status': 'accepted'}
 
@@ -82,7 +82,13 @@ with DAG(
                                 "time": utcStamp(),
                                 "text": "accepted"
                             })
-                            tasks.append(entry['resource'])
+                            proceed = True
+                            if 'meta' in entry['resource'] and 'versionId' in entry['resource']['meta']:
+                                print('Task id = '+ entry['resource']['id'] + ' versionId = '+ entry['resource']['meta']['versionId'])
+                                if int(entry['resource']['meta']['versionId']) > 1000:
+                                    proceed= False
+                            if proceed:
+                                tasks.append(entry['resource'])
             print("Number of Tasks = {}".format(len(tasks)))
         except Exception as e:
             print(e)
@@ -130,10 +136,12 @@ with (DAG(
         response = requests.get(cdrFHIRUrl + '/Task/' + task['id'],headers=headersCDR)
         if response.status_code == 200:
             print(response.text)
-            task = json.loads(response.text)
+            _task = json.loads(response.text)
             ## reset output, will add new fields
-            task['output'] = []
-        return task
+            _task['output'] = []
+            return _task
+        else:
+            raise ValueError('Unexpected Error')
 
     @task(task_id="Task_completed", trigger_rule="all_success")
     def Task_completed(_task):
@@ -359,6 +367,10 @@ with (DAG(
                  execution_timeout=timedelta(seconds=400),
                  retries=3)
     def Already_Done(_task):
+        if 'meta' in _task and 'versionId' in _task['meta']:
+            print('Task id = '+ _task['id'] + ' versionId = '+ _task['meta']['versionId'])
+            if int(_task['meta']['versionId']) > 100:
+                return "SKIP"
         if _task['status'] == 'completed':
             return "SKIP"
         return "PROCEED"
