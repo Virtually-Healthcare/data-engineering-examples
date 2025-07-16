@@ -351,10 +351,10 @@ with DAG(
             newQR['item'].append(problems)
         return newQR
 
-    @task.branch(task_id="already_Done",
+    @task.branch(task_id="Already_Done",
                  execution_timeout=timedelta(seconds=400),
                  retries=3)
-    def alreadyDone(_task):
+    def Already_Done(_task):
         if _task['status'] == 'completed':
             return "SKIP"
         return "PROCEED"
@@ -558,8 +558,8 @@ with DAG(
 
 
     _task = Task_accepted()
-    _checked = alreadyDone(_task)
-    _inprogress = Task_in_progress(_checked)
+    _checked = Already_Done(_task)
+    _inprogress = Task_in_progress(_task)
 
     _success= Task_completed(_task)
     _error = Task_failed(_task)
@@ -602,7 +602,7 @@ with DAG(
     PASS_op >> _pdsPatient >> [_endpoint, _NHSTrust]
     FAIL_op >> _error
 
-    PROCEED_op >> _inprogress
+    [ PROCEED_op, _task] >> _inprogress
     SKIP_op >> _success
 
     _endpoint >>  [TPP_op, GPConnect_op, EMIS_op]
