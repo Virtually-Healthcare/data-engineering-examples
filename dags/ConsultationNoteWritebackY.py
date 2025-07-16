@@ -41,7 +41,7 @@ host="192.168.1.94"
 
 cdrFHIRUrl = "http://"+host+":8180/CDR/FHIR/R4"
 emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"
-esbFHIRUrl = "http://"+host+":8181/ESB/R4"
+esbFHIRUrl = "https://fubfc00id1.execute-api.eu-west-2.amazonaws.com/ESB/R4"
 
 with DAG(
         'Consultation_Note_Trigger_TasksY',

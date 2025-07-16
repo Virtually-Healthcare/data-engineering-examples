@@ -36,13 +36,13 @@ default_args = {
     # 'trigger_rule': 'all_success'
 }
 
-host = "192.168.1.59"
+host = "192.168.1.67"
 
 #host="192.168.1.94"
 
 cdrFHIRUrl = "http://"+host+":8180/CDR/FHIR/R4"
 emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"
-esbFHIRUrl = "http://"+host+":8181/ESB/R4"
+esbFHIRUrl = "https://fubfc00id1.execute-api.eu-west-2.amazonaws.com/ESB/R4"
 
 with DAG(
         'Consultation_Note_Trigger_TasksX',
@@ -125,6 +125,12 @@ with DAG(
         print(context["params"]["_task"])
         task = context["params"]["_task"]
         print("Started Task id = "+task['id'])
+        ## Get Latest Task, this may have been updated since initial run
+        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
+        response = requests.get(cdrFHIRUrl + '/Task/' + task['id'],headers=headersCDR)
+        if response.status_code == 200:
+            print(response.text)
+            task = json.loads(response.text)
         return task
 
     @task(task_id="Task_completed", trigger_rule="all_success")
@@ -134,7 +140,7 @@ with DAG(
             _task['note'] = []
         _task['note'].append({
             "time": utcStamp(),
-            "text": "Consultation written back to EPR system"
+            "text": "Airflow: Consultation written back to EPR system"
         })
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
@@ -149,7 +155,7 @@ with DAG(
             _task['note'] = []
         _task['note'].append({
             "time": utcStamp(),
-            "text": "In progress"
+            "text": "Airflow: In progress"
         })
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
@@ -163,7 +169,7 @@ with DAG(
             _task['note'] = []
         _task['note'].append({
             "time": utcStamp(),
-            "text": "Failed TODO Add reason"
+            "text": "Airflow: Failed TODO Add reason"
         })
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
@@ -182,7 +188,7 @@ with DAG(
             _task['note'] = []
         _task['note'].append({
             "time": utcStamp(),
-            "text": "Cancelled TODO Add reason"
+            "text": "Airflow: Cancelled TODO Add reason"
         })
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
@@ -390,7 +396,8 @@ with DAG(
                         print(issue['expression'])
                     print('')
         if responseValidate.status_code != 200:
-            raise ValueError('Task Failed - FHIR Validation Fatal Issue')
+            if responseValidate.status_code != 503:
+                raise ValueError('Task Failed - FHIR Validation Fatal Issue - Response code = '+ str(responseValidate.status_code))
         if failed:
             print("FAILED Validation")
             return "FAIL"
