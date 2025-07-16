@@ -106,12 +106,12 @@ with DAG(
 
     #_trigger_send_task_dag >> _done
 
-with DAG(
+with (DAG(
         'Consultation_Note_TaskX',
         schedule=None,
         description='Consultation Note WritebackX',
         start_date=datetime(2022, 1, 1)
-) as dag2:
+) as dag2):
 
     options = ["EMIS", "TPP", "GPConnect_SendDocument"]
 
@@ -213,6 +213,10 @@ with DAG(
     @task(task_id="Done_Primary_Care_Send", trigger_rule="one_success")
     def Done_Primary_Care_Send():
         return "One GPSend success"
+
+    @task(task_id="Done_Task", trigger_rule="one_success")
+    def Done_Task():
+        return "Done Task"
 
     @task(task_id="get_consultation", on_failure_callback = [Task_cancelled])
     def get_consultation(_task):
@@ -581,6 +585,7 @@ with DAG(
 
     _sendTrust = send_to_Trust_Integration_Engine(_v2message)
     _doneGPSend = Done_Primary_Care_Send()
+    _doneTask = Done_Task()
     #_cancelled = Task_cancelled(_task)
 
 
@@ -603,7 +608,7 @@ with DAG(
     FAIL_op >> _error
 
     [ PROCEED_op, _task] >> _inprogress
-    SKIP_op >> _success
+
 
     _endpoint >>  [TPP_op, GPConnect_op, EMIS_op]
     EMIS_op >> _duplicate >> [DUPLICATE_op, NOT_DUPLICATE_op]
@@ -613,4 +618,8 @@ with DAG(
 
     _NHSTrust >> _v2message >> _sendTrust
 
-    [_sendResponse, _sendMESH, TPP_op, DUPLICATE_op] >> _doneGPSend >> _success
+    [_doneTask, ]
+
+    [_sendResponse, _sendMESH, TPP_op, DUPLICATE_op] >> _doneGPSend
+
+    [SKIP_op, _doneGPSend] >> _doneTask >> _success
