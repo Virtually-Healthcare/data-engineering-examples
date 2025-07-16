@@ -131,6 +131,8 @@ with DAG(
         if response.status_code == 200:
             print(response.text)
             task = json.loads(response.text)
+            ## reset output, will add new fields
+            task['output'] = []
         return task
 
     @task(task_id="Task_completed", trigger_rule="all_success")
@@ -160,7 +162,7 @@ with DAG(
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
         print(response.text)
-        return "in-progress"
+        return _task
 
     @task(task_id="Task_failed")
     def Task_failed(_task):
@@ -349,6 +351,14 @@ with DAG(
             newQR['item'].append(problems)
         return newQR
 
+    @task.branch(task_id="already_Done",
+                 execution_timeout=timedelta(seconds=400),
+                 retries=3)
+    def alreadyDone(_task):
+        if _task['status'] == 'completed':
+            return "SKIP"
+        return "PROCEED"
+
     @task.branch(task_id="perform_FHIR_Validation",
                  execution_timeout=timedelta(seconds=400),
                  retries=3)
@@ -364,20 +374,35 @@ with DAG(
 
         responseValidate = requests.post(esbFHIRUrl + '/$validate', json.dumps(resource), headers=headersESB)
         print("======= Response from FHIR Validation ========")
-        #print(responseValidate.text)
-        operationOutcome = json.loads(responseValidate.text)
-        failed = False
+        if responseValidate.status_code != 200:
+            if responseValidate.status_code != 503:
+                raise ValueError('Task Failed - FHIR Validation Fatal Issue - Response code = '+ str(responseValidate.status_code))
+            else:
+                print('Issue performing validation - 503 error, ignoring and carrying on')
+        else:
+            operationOutcome = json.loads(responseValidate.text)
+            failed = False
 
-        if 'issue' in operationOutcome:
-            print("======= Error ========")
-            for issue in operationOutcome['issue']:
-                if issue['severity'] == 'error':
-                    ignore = False
-                    if 'details' in issue:
-                        if '307321000000107' in issue['details']['text']:
-                            ignore = True
-                    if not ignore:
-                        failed = True
+            if 'issue' in operationOutcome:
+                print("======= Error ========")
+                for issue in operationOutcome['issue']:
+                    if issue['severity'] == 'error':
+                        ignore = False
+                        if 'details' in issue:
+                            if '307321000000107' in issue['details']['text']:
+                                ignore = True
+                        if not ignore:
+                            failed = True
+                            if 'details' in issue:
+                                print("Issue: " + issue['details']['text'] + ' [' + issue['severity'] + ']')
+                            if 'diagnostics' in issue:
+                                print("Issue: " + issue['diagnostics'] + ' [' + issue['severity'] + ']')
+                            if 'expression' in issue:
+                                print(issue['expression'])
+                            print('')
+                print("======= Warning ========")
+                for issue in operationOutcome['issue']:
+                    if issue['severity'] == 'warning':
                         if 'details' in issue:
                             print("Issue: " + issue['details']['text'] + ' [' + issue['severity'] + ']')
                         if 'diagnostics' in issue:
@@ -385,22 +410,10 @@ with DAG(
                         if 'expression' in issue:
                             print(issue['expression'])
                         print('')
-            print("======= Warning ========")
-            for issue in operationOutcome['issue']:
-                if issue['severity'] == 'warning':
-                    if 'details' in issue:
-                        print("Issue: " + issue['details']['text'] + ' [' + issue['severity'] + ']')
-                    if 'diagnostics' in issue:
-                        print("Issue: " + issue['diagnostics'] + ' [' + issue['severity'] + ']')
-                    if 'expression' in issue:
-                        print(issue['expression'])
-                    print('')
-        if responseValidate.status_code != 200:
-            if responseValidate.status_code != 503:
-                raise ValueError('Task Failed - FHIR Validation Fatal Issue - Response code = '+ str(responseValidate.status_code))
-        if failed:
-            print("FAILED Validation")
-            return "FAIL"
+
+            if failed:
+                print("FAILED Validation")
+                return "FAIL"
         return "PASS"
 
     @task(task_id="convert_to_EMISOpen",retries=3, on_failure_callback = [Task_cancelled])
@@ -411,6 +424,9 @@ with DAG(
         print("======= Response from transform to EMIS Open ========")
         if responseEMISTransform.status_code == 200:
             print(responseEMISTransform.text)
+            record['task']['output'].append({
+                "valueString": responseEMISTransform.text
+            })
             EMISOpenRecords = {
                 "response" : responseEMISTransform.text,
                 "task": record['task']
@@ -542,10 +558,13 @@ with DAG(
 
 
     _task = Task_accepted()
-    _inprogress = Task_in_progress(_task)
+    _checked = alreadyDone(_task)
+    _inprogress = Task_in_progress(_checked)
+
     _success= Task_completed(_task)
     _error = Task_failed(_task)
-    _FHIRcollection = get_consultation(_task)
+    _FHIRcollection = get_consultation(_inprogress)
+
     _duplicate = check_consultation_not_already_present_in_EMIS(_FHIRcollection)
     _FHIRmessage = convert_to_HL7_FHIR_Message_A04(_FHIRcollection)
     _valid = perform_FHIR_Validation(_FHIRmessage)
@@ -564,6 +583,7 @@ with DAG(
     _doneGPSend = Done_Primary_Care_Send()
     #_cancelled = Task_cancelled(_task)
 
+
     EMIS_op = EmptyOperator(task_id="EMIS", dag=dag2)
     TPP_op = EmptyOperator(task_id="TPP", dag=dag2)
     GPConnect_op = EmptyOperator(task_id="GPConnect_SendDocument", dag=dag2)
@@ -571,12 +591,19 @@ with DAG(
     FAIL_op = EmptyOperator(task_id="FAIL", dag=dag2)
     DUPLICATE_op = EmptyOperator(task_id="DUPLICATE", dag=dag2)
     NOT_DUPLICATE_op = EmptyOperator(task_id="NOT_DUPLICATE", dag=dag2)
+    PROCEED_op = EmptyOperator(task_id="PROCEED", dag=dag2)
+    SKIP_op = EmptyOperator(task_id="SKIP", dag=dag2)
 
 
-    _task >> _inprogress >> _FHIRcollection >> _FHIRmessage >> _valid >> [PASS_op, FAIL_op]
+    _task >> _checked >> [PROCEED_op, SKIP_op]
+
+    _inprogress >> _FHIRcollection >> _FHIRmessage >> _valid >> [PASS_op, FAIL_op]
 
     PASS_op >> _pdsPatient >> [_endpoint, _NHSTrust]
     FAIL_op >> _error
+
+    PROCEED_op >> _inprogress
+    SKIP_op >> _success
 
     _endpoint >>  [TPP_op, GPConnect_op, EMIS_op]
     EMIS_op >> _duplicate >> [DUPLICATE_op, NOT_DUPLICATE_op]
