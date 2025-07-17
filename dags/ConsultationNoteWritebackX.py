@@ -141,9 +141,11 @@ with (DAG(
             })
             task['output'] = []
             if 'ti' in context:
-                print('cotext[ti] present')
-                emisopen = context["ti"].xcom_pull(key="EMISOpen")
-                if emisopen != '':
+                print('context[ti] present')
+                emisopen = context["ti"].xcom_pull(key="EMISOpen", task_ids="convert_to_EMISOpen")
+                if emisopen != '' and emisopen is not None:
+                    print("EMISOpen")
+                    print(emisopen)
                     task['output'].append({
                         "type": {
                             "coding": [
@@ -155,8 +157,10 @@ with (DAG(
                         "valueString": emisopen
                     })
 
-                sendEMIS = context["ti"].xcom_pull(key="SendEMIS")
-                if sendEMIS != '':
+                sendEMIS = context["ti"].xcom_pull(key="SendEMIS", task_ids="send_to_EMIS")
+                if sendEMIS != '' and emisopen is not None:
+                    print("SendEMIS")
+                    print(sendEMIS)
                     task['output'].append({
                         "type": {
                             "coding": [
@@ -222,8 +226,8 @@ with (DAG(
             try:
                 print('Exception found')
                 print(exception)
-                formatted_exception = ''.join(traceback.format_exception(etype=type(exception), value=exception, tb=exception.__traceback__)).strip()
-                print(formatted_exception)
+                #formatted_exception = ''.join(traceback.format_exception(etype=type(exception), value=exception, tb=exception.__traceback__)).strip()
+                #print(formatted_exception)
             except NameError:
                 print("well, it WASN'T defined after all!")
             else:
@@ -482,8 +486,9 @@ with (DAG(
             print("======= Send to EMIS Open ========")
             print(responseEMISSend.text)
             outcomeJSON = json.loads(responseEMISSend.text)
-            if 'resourceType' in outcomeJSON and outcomeJSON['resourceType'] == 'OperationOutcome' and 'issue' in outcomeJSON:
+            if 'resourceType' in outcomeJSON and outcomeJSON['resourceType'] == 'OperationOutcome':
                 context["ti"].xcom_push(key="SendEMIS", value=responseEMISSend.text)
+            if 'resourceType' in outcomeJSON and outcomeJSON['resourceType'] == 'OperationOutcome' and 'issue' in outcomeJSON:
                 if 'severity' in outcomeJSON['issue'][0] and outcomeJSON['issue'][0]['severity'] == 'information' :
                     sendResponse = {
                         "response" : responseEMISSend.text,
