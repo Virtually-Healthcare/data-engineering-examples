@@ -45,10 +45,10 @@ emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"
 esbFHIRUrl = "https://fubfc00id1.execute-api.eu-west-2.amazonaws.com/ESB/R4"
 
 with DAG(
-        'Consultation_Note_Trigger_TasksX',
+        'Consultation_Note_Trigger_Tasks1',
         schedule=timedelta(minutes=1),
         catchup=False,
-        description='Consultation Note WritebackX',
+        description='Consultation Note Writeback1',
         start_date=datetime(2022, 1, 1)
 ) as Parent_dag:
 
@@ -104,7 +104,7 @@ with DAG(
         _trigger_send_task_dag = TriggerDagRunOperator(
             #  task_id=f"trigger_consultation_task",
             task_id=f"trigger_consultation_task_{id}",
-            trigger_dag_id="Consultation_Note_TaskX",
+            trigger_dag_id="Consultation_Note_Task1",
             conf={"_task": _task},
             dag=Parent_dag
         )
@@ -112,12 +112,12 @@ with DAG(
 
     #_trigger_send_task_dag >> _done
 
-with (DAG(
-        'Consultation_Note_TaskX',
+with DAG(
+        'Consultation_Note_Task1',
         schedule=None,
-        description='Consultation Note WritebackX',
+        description='Consultation Note Writeback1',
         start_date=datetime(2022, 1, 1)
-) as dag2):
+) as dag2:
 
     options = ["EMIS", "TPP", "GPConnect_SendDocument"]
 
@@ -186,6 +186,9 @@ with (DAG(
         task = context["dag_run"].conf["_task"]
         print(task)
         print(task['id'])
+        #_task = json.loads(task)
+        #print(_task)
+        #print(_task['id'])
         response = write_task(task['id'], 'cancelled',  "Airflow: Cancelled TODO Add reason")
         print(response.status_code)
 

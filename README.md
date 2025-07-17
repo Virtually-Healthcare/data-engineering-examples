@@ -18,6 +18,9 @@ Steps
 
 > docker compose up
 
+### Run Airflow commands
+
+> docker compose run airflow-worker airflow dags list-import-errors
 
 
 ## FHIR Repository (Intersystems)
