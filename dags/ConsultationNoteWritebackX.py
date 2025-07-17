@@ -158,7 +158,7 @@ with (DAG(
                     })
 
                 sendEMIS = context["ti"].xcom_pull(key="SendEMIS", task_ids="send_to_EMIS")
-                if sendEMIS != '' and emisopen is not None:
+                if sendEMIS != '' and sendEMIS is not None:
                     print("SendEMIS")
                     print(sendEMIS)
                     task['output'].append({
@@ -170,6 +170,19 @@ with (DAG(
                             ]
                         },
                         "valueString": sendEMIS
+                    })
+                diagnostics = context["ti"].xcom_pull(key="Diagnostics", task_ids="send_to_EMIS")
+                if diagnostics != '' and diagnostics is not None:
+
+                    task['output'].append({
+                        "type": {
+                            "coding": [
+                                {
+                                    "code": "Diagnostics"
+                                }
+                            ]
+                        },
+                        "valueString": diagnostics
                     })
 
             return requests.put(cdrFHIRUrl + '/Task/'+task['id'],json.dumps(task),headers=headersCDR)
@@ -259,7 +272,7 @@ with (DAG(
             print("======= Response from extract collection ========")
             print(responseCDR.text)
         else:
-            raise ValueError('Task Failed - Get Consultation - Technical Error')
+            raise ValueError('Task Failed - Get Consultation - Technical Error ' + str(responseCDR.status_code))
 
         resource = json.loads(responseCDR.text)
 
@@ -499,7 +512,7 @@ with (DAG(
                     diagnostics = ''
                     if 'diagnostics' in outcomeJSON['issue'][0]:
                         diagnostics = outcomeJSON['issue'][0]['diagnostics']
-
+                        context["ti"].xcom_push(key="Diagnostics", value=diagnostics)
                     raise ValueError('Task Failed - send to EMISOpen Expected information issue '+ diagnostics)
             else:
                 raise ValueError('Task Failed - send to EMISOpen Unexpected Response')
