@@ -125,7 +125,7 @@ with (DAG(
         ts = datetime.now()
         return ts.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
-    def write_task(taskid, status, note, **context ):
+    def write_task(taskid, status, note, context ):
         headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
         response = requests.get(cdrFHIRUrl + '/Task/' + taskid,headers=headersCDR)
         if response.status_code == 200:
@@ -141,6 +141,7 @@ with (DAG(
             })
             task['output'] = []
             if 'ti' in context:
+                print('cotext[ti] present')
                 emisopen = context["ti"].xcom_pull(key="EMISOpen")
                 if emisopen != '':
                     task['output'].append({
@@ -189,20 +190,20 @@ with (DAG(
             raise ValueError('Unexpected Error')
 
     @task(task_id="Task_completed", trigger_rule="all_success")
-    def Task_completed(_task):
-        response = write_task(_task['id'], 'completed', "Airflow: Consultation written back to EPR system")
+    def Task_completed(_task, **context):
+        response = write_task(_task['id'], 'completed', "Airflow: Consultation written back to EPR system",context)
         print(response.text)
         return "completed"
 
     @task(task_id="Task_in-progress")
-    def Task_in_progress(_task):
-        response = write_task(_task['id'], 'in-progress', "Airflow: In progress")
+    def Task_in_progress(_task,**context):
+        response = write_task(_task['id'], 'in-progress', "Airflow: In progress",context)
         print(response.text)
         return _task
 
     @task(task_id="Task_failed")
-    def Task_failed(_task):
-        response = write_task(_task['id'], 'failed', "Airflow: Failed TODO Add reason")
+    def Task_failed(_task,**context):
+        response = write_task(_task['id'], 'failed', "Airflow: Failed TODO Add reason",context)
         print(response.text)
         raise ValueError('Task Failed - Data issue detected with Consultation Note')
 
@@ -213,19 +214,22 @@ with (DAG(
         task = context["dag_run"].conf["_task"]
         print(task)
         print(task['id'])
-        response = write_task(task['id'], 'cancelled',  "Airflow: Cancelled TODO Add reason")
+        response = write_task(task['id'], 'cancelled',  "Airflow: Cancelled TODO Add reason", context)
         print(response.status_code)
 
         exception = context.get('exception')
-        try:
-            print(exception)
-            formatted_exception = ''.join(traceback.format_exception(etype=type(exception), value=exception, tb=exception.__traceback__)).strip()
-            print(formatted_exception)
-        except NameError:
-            print("well, it WASN'T defined after all!")
+        if exception != '':
+            try:
+                print('Exception found')
+                print(exception)
+                formatted_exception = ''.join(traceback.format_exception(etype=type(exception), value=exception, tb=exception.__traceback__)).strip()
+                print(formatted_exception)
+            except NameError:
+                print("well, it WASN'T defined after all!")
+            else:
+                print('Exception not defined')
         else:
-            print('Exception not defined')
-
+            print('No exception found')
 
         ## Add in notifications here
 
