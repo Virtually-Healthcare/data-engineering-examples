@@ -184,17 +184,20 @@ with DAG(
         print("======== Task cancelled ==========")
         ##print(context)
         task = context["dag_run"].conf["_task"]
-        ##print(task)
+        #print(task)
         print(task['id'])
+        #_task = json.loads(task)
+        #print(_task)
+        #print(_task['id'])
         response = write_task(task['id'], 'cancelled',  "Airflow: Cancelled TODO Add reason")
         print(response.status_code)
 
         exception = context.get('exception')
         try:
             print(exception)
-            formatted_exception = ''.join(traceback.format_exception(etype=type(exception), value=exception, tb=exception.__traceback__)).strip()
-            print(formatted_exception)
-        except:
+            #formatted_exception = ''.join(traceback.format_exception(etype=type(exception), value=exception, tb=exception.__traceback__)).strip()
+            #print(formatted_exception)
+        except NameError:
             print("well, it WASN'T defined after all!")
         else:
             print('Exception not defined')
