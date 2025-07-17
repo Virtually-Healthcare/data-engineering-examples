@@ -36,9 +36,9 @@ default_args = {
     # 'trigger_rule': 'all_success'
 }
 
-#host = "192.168.1.67"
+host = "192.168.1.67"
 
-host="192.168.1.80"
+#host="192.168.1.80"
 
 cdrFHIRUrl = "http://"+host+":8180/CDR/FHIR/R4"
 emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"
@@ -140,6 +140,33 @@ with (DAG(
                 "text": note
             })
             task['output'] = []
+            if 'ti' in context:
+                emisopen = context["ti"].xcom_pull(key="EMISOpen")
+                if emisopen != '':
+                    task['output'].append({
+                        "type": {
+                            "coding": [
+                                {
+                                    "code": "EMISOpen"
+                                }
+                            ]
+                        },
+                        "valueString": emisopen
+                    })
+
+                sendEMIS = context["ti"].xcom_pull(key="SendEMIS")
+                if sendEMIS != '':
+                    task['output'].append({
+                        "type": {
+                            "coding": [
+                                {
+                                    "code": "SendEMIS"
+                                }
+                            ]
+                        },
+                        "valueString": sendEMIS
+                    })
+
             return requests.put(cdrFHIRUrl + '/Task/'+task['id'],json.dumps(task),headers=headersCDR)
         else:
             raise ValueError('Unexpected Error')
