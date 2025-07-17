@@ -504,8 +504,7 @@ with (DAG(
             if 'resourceType' in outcomeJSON and outcomeJSON['resourceType'] == 'OperationOutcome' and 'issue' in outcomeJSON:
                 if 'severity' in outcomeJSON['issue'][0] and outcomeJSON['issue'][0]['severity'] == 'information' :
                     sendResponse = {
-                        "response" : responseEMISSend.text,
-                        "task": EMISOpen['task']
+                        "response" : responseEMISSend.text
                     }
                     return sendResponse
                 else:
