@@ -36,9 +36,9 @@ default_args = {
     # 'trigger_rule': 'all_success'
 }
 
-host = "192.168.1.67"
+#host = "192.168.1.67"
 
-#host="192.168.1.94"
+host="192.168.1.80"
 
 cdrFHIRUrl = "http://"+host+":8180/CDR/FHIR/R4"
 emisFHIRUrl = "http://"+host+":8180/EMIS/FHIR/R4"
@@ -112,12 +112,12 @@ with DAG(
 
     #_trigger_send_task_dag >> _done
 
-with (DAG(
+with DAG(
         'Consultation_Note_TaskX',
         schedule=None,
         description='Consultation Note WritebackX',
         start_date=datetime(2022, 1, 1)
-) as dag2):
+) as dag2:
 
     options = ["EMIS", "TPP", "GPConnect_SendDocument"]
 
@@ -125,6 +125,24 @@ with (DAG(
         ts = datetime.now()
         return ts.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
+    def write_task(taskid, status, note, **context ):
+        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
+        response = requests.get(cdrFHIRUrl + '/Task/' + taskid,headers=headersCDR)
+        if response.status_code == 200:
+            print(response.text)
+            task = json.loads(response.text)
+            headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
+            task['status'] = status
+            if 'note' not in task:
+                task['note'] = []
+            task['note'].append({
+                "time": utcStamp(),
+                "text": note
+            })
+            task['output'] = []
+            return requests.put(cdrFHIRUrl + '/Task/'+task['id'],json.dumps(task),headers=headersCDR)
+        else:
+            raise ValueError('Unexpected Error')
 
     @task(task_id="Task_accepted")
     def Task_accepted(**context):
@@ -145,67 +163,35 @@ with (DAG(
 
     @task(task_id="Task_completed", trigger_rule="all_success")
     def Task_completed(_task):
-        _task['status'] = 'completed'
-        if 'note' not in _task:
-            _task['note'] = []
-        _task['note'].append({
-            "time": utcStamp(),
-            "text": "Airflow: Consultation written back to EPR system"
-        })
-        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
-        response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
-
+        response = write_task(_task['id'], 'completed', "Airflow: Consultation written back to EPR system")
         print(response.text)
         return "completed"
 
     @task(task_id="Task_in-progress")
     def Task_in_progress(_task):
-        _task['status'] = 'in-progress'
-        if 'note' not in _task:
-            _task['note'] = []
-        _task['note'].append({
-            "time": utcStamp(),
-            "text": "Airflow: In progress"
-        })
-        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
-        response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
+        response = write_task(_task['id'], 'in-progress', "Airflow: In progress")
         print(response.text)
         return _task
 
     @task(task_id="Task_failed")
     def Task_failed(_task):
-        _task['status'] = 'failed'
-        if 'note' not in _task:
-            _task['note'] = []
-        _task['note'].append({
-            "time": utcStamp(),
-            "text": "Airflow: Failed TODO Add reason"
-        })
-        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
-        response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
+        response = write_task(_task['id'], 'failed', "Airflow: Failed TODO Add reason")
         print(response.text)
         raise ValueError('Task Failed - Data issue detected with Consultation Note')
-        #return "error"
 
 
     def Task_cancelled(context):
         print("======== Task cancelled ==========")
-        print(context)
+        ##print(context)
         task = context["dag_run"].conf["_task"]
-        _task = json.loads(json.dumps(task))
-        _task['status'] = 'cancelled'
-        if 'note' not in _task:
-            _task['note'] = []
-        _task['note'].append({
-            "time": utcStamp(),
-            "text": "Airflow: Cancelled TODO Add reason"
-        })
-        headersCDR = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
-        response = requests.put(cdrFHIRUrl + '/Task/'+_task['id'],json.dumps(_task),headers=headersCDR)
-
-        # TODO investigate why these extra steps don't get loggedAdd commentMore actions
-        print("Task Updated to cancelled")
+        print(task)
+        print(task['id'])
+        #_task = json.loads(task)
+        #print(_task)
+        #print(_task['id'])
+        response = write_task(task['id'], 'cancelled',  "Airflow: Cancelled TODO Add reason")
         print(response.status_code)
+
         exception = context.get('exception')
         try:
             print(exception)
@@ -215,7 +201,11 @@ with (DAG(
             print("well, it WASN'T defined after all!")
         else:
             print('Exception not defined')
-        raise ValueError('Task Failed - Technical Issue')
+
+
+        ## Add in notifications here
+
+        ##raise ValueError('Task Failed - Technical Issue')
 
 
     @task(task_id="Done_Primary_Care_Send", trigger_rule="one_success")
@@ -433,26 +423,23 @@ with (DAG(
         return "PASS"
 
     @task(task_id="convert_to_EMISOpen",retries=3, on_failure_callback = [Task_cancelled])
-    def convert_to_EMISOpen(record):
+    def convert_to_EMISOpen(record, **context):
         headersEMIS = {"Content-Type": "application/fhir+json",
                        "ODS_CODE": "F83004"}
         responseEMISTransform = requests.post(emisFHIRUrl + '/Bundle/$transform-EMISOpen', record['response'], headers=headersEMIS )
         print("======= Response from transform to EMIS Open ========")
         if responseEMISTransform.status_code == 200:
-            print(responseEMISTransform.text)
-            record['task']['output'].append({
-                "valueString": responseEMISTransform.text
-            })
+            ##print(responseEMISTransform.text)
+            context["ti"].xcom_push(key="EMISOpen", value=responseEMISTransform.text)
             EMISOpenRecords = {
-                "response" : responseEMISTransform.text,
-                "task": record['task']
+                "response" : responseEMISTransform.text
             }
             return EMISOpenRecords
         else:
             raise ValueError('Task Failed - convert to EMISOpen')
 
-    @task(task_id="send_to_EMIS", retries = 3, on_failure_callback = [Task_cancelled])
-    def send_to_EMIS(EMISOpen):
+    @task(task_id="send_to_EMIS", retries = 1, on_failure_callback = [Task_cancelled])
+    def send_to_EMIS(EMISOpen, **context):
         headersEMIS = {"Content-Type": "application/fhir+json",
                        "ODS_CODE": "F83004"}
         body = {
@@ -468,6 +455,7 @@ with (DAG(
             print(responseEMISSend.text)
             outcomeJSON = json.loads(responseEMISSend.text)
             if 'resourceType' in outcomeJSON and outcomeJSON['resourceType'] == 'OperationOutcome' and 'issue' in outcomeJSON:
+                context["ti"].xcom_push(key="SendEMIS", value=responseEMISSend.text)
                 if 'severity' in outcomeJSON['issue'][0] and outcomeJSON['issue'][0]['severity'] == 'information' :
                     sendResponse = {
                         "response" : responseEMISSend.text,
@@ -478,6 +466,7 @@ with (DAG(
                     diagnostics = ''
                     if 'diagnostics' in outcomeJSON['issue'][0]:
                         diagnostics = outcomeJSON['issue'][0]['diagnostics']
+
                     raise ValueError('Task Failed - send to EMISOpen Expected information issue '+ diagnostics)
             else:
                 raise ValueError('Task Failed - send to EMISOpen Unexpected Response')
@@ -564,7 +553,6 @@ with (DAG(
         print(json.dumps(resource))
         return {
             "response" : json.dumps(resource),
-            "task": record['task']
         }
 
     @task(task_id="send_to_Trust_Integration_Engine_FUTURE_TODO",retries=3)
@@ -610,7 +598,6 @@ with (DAG(
     NOT_DUPLICATE_op = EmptyOperator(task_id="NOT_DUPLICATE", dag=dag2)
     PROCEED_op = EmptyOperator(task_id="PROCEED", dag=dag2)
     SKIP_op = EmptyOperator(task_id="SKIP", dag=dag2)
-
 
     _task >> _checked >> [PROCEED_op, SKIP_op]
 
