@@ -112,12 +112,12 @@ with DAG(
 
     #_trigger_send_task_dag >> _done
 
-with (DAG(
+with DAG(
         'Consultation_Note_TaskX',
         schedule=None,
         description='Consultation Note WritebackX',
         start_date=datetime(2022, 1, 1)
-) as dag2):
+) as dag2:
 
     options = ["EMIS", "TPP", "GPConnect_SendDocument"]
 
