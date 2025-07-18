@@ -64,7 +64,7 @@ with DAG(
         headersCDR = { "Accept": "application/fhir+json"}
         parameters = {'_sort' : '-authored-on',
                       'authored-on': 'gt2025-07-01',
-                      '_count': '5',
+                      '_count': '1',
                       'status': 'accepted'}
 
         tasks = []
@@ -117,7 +117,7 @@ with DAG(
         schedule=None,
         description='Consultation Note Writeback Y',
         start_date=datetime(2022, 1, 1),
-        tags=['FHIR','Workflow','EMIS','GPConnect'],
+        tags = ['FHIR','Workflow','EMIS','GPConnect'],
 ) as dag2:
 
     options = ["EMIS", "TPP", "GPConnect_SendDocument"]
